@@ -1,0 +1,31 @@
+# Tests run against the real CockroachDB from compose.yaml, never an embedded
+# PostgreSQL. The behaviours under test - SERIALIZABLE aborts, lease semantics,
+# VECTOR columns, the goal-prefixed vector index - are precisely the ones a
+# stand-in database would get wrong while still passing.
+spring:
+  datasource:
+    url: ${NEXUM_TEST_DB_URL:jdbc:postgresql://localhost:26257/nexum?sslmode=disable}
+    username: root
+    password:
+
+  ai:
+    # No model providers in tests. Deliberate: the memory layer must be
+    # provable without credentials, and a suite that silently calls Bedrock
+    # would be slow, costly, and fail on a laptop with no AWS access.
+    # Embeddings under test are synthetic vectors written directly.
+    model:
+      chat: none
+      embedding: none
+
+nexum:
+  # Both sweeps are off by default so a background thread cannot mutate rows
+  # mid-assertion. The recovery tests turn the reaper back on explicitly -
+  # there, its detection IS the thing being tested.
+  reaper:
+    enabled: false
+  embedding:
+    enabled: false
+
+logging:
+  level:
+    com.nexum: INFO

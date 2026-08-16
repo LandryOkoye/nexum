@@ -1,0 +1,31 @@
+-- Goal + scope prefixed vector index.
+--
+-- V4 indexed (goal_id, embedding), which narrows to the goal inside the storage
+-- engine. Measured against a real cluster, that turned out not to be enough:
+-- CockroachDB serves a vector search from the index ONLY when the query
+-- constrains the prefix columns and nothing else. Adding any residual predicate
+-- - scope, embedding_status, a membership EXISTS - made the optimiser abandon
+-- the vector index entirely and fall back to a full scan plus a sort.
+--
+--   EXPLAIN ... WHERE goal_id = ?                      -> vector search  (index)
+--   EXPLAIN ... WHERE goal_id = ? AND scope = 'GOAL'   -> full scan      (V4)
+--
+-- Since scope is exactly the access-control boundary, filtering it after the
+-- ranking would have meant reading memories the caller may not see and then
+-- discarding them - the ordering this design explicitly argues against.
+--
+-- Putting scope into the prefix restores the property:
+--
+--   prefix spans: [/<goal>/'GOAL' - /<goal>/'GOAL']
+--
+-- The goal and the scope are now both enforced by the index, before a single
+-- vector is compared. That is the honest version of the claim this project
+-- makes about CockroachDB: the relational scope predicate and the semantic
+-- ranking are the same index.
+--
+-- V4's index is left in place. It still serves goal-wide retrieval that does not
+-- constrain scope, and dropping an index that a query might already depend on
+-- buys nothing here.
+
+CREATE VECTOR INDEX IF NOT EXISTS memories_goal_scope_embedding_idx
+    ON memories (goal_id, scope, embedding vector_cosine_ops);

@@ -3,6 +3,7 @@ package com.nexum.memory;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
@@ -12,63 +13,100 @@ import org.springframework.stereotype.Component;
  * will eventually disagree with itself: one retrieval path gets a new filter,
  * another is written months later by someone who did not know the rule, and the
  * leak is invisible until somebody audits every query. So there is exactly one
- * predicate builder, and {@link MemoryRepository} constructs no {@code WHERE}
- * clause over {@code memories} without it.
+ * place that decides what an agent may see, and {@link MemoryRepository}
+ * composes no {@code WHERE} clause over {@code memories} without it.
  *
- * <p><strong>The goal equality is deliberately the first conjunct.</strong> The
- * vector index built in V4 is {@code (goal_id, embedding vector_cosine_ops)}, so
- * a top-level {@code goal_id = ?} lets CockroachDB narrow to the goal
- * <em>inside the storage engine</em> and rank only that goal's vectors. This is
- * the property that makes the design defensible: the relational scope predicate
- * and the semantic ranking are the same index, so scope is not something the
- * application remembers to apply afterwards. Retrieval that ranked globally and
- * filtered after would be wrong twice over - worse recall, and an access-control
- * decision made after the data has already been read.
+ * <p><strong>Visibility is expressed as grants, not as one predicate.</strong>
+ * That shape is forced by how CockroachDB serves vector search, and the
+ * constraint turns out to improve the design. A vector index is used only when
+ * the query constrains its prefix columns and nothing else - measured, not
+ * assumed: adding {@code scope} as a residual filter to a {@code (goal_id,
+ * embedding)} search made the optimiser abandon the index and full-scan. Since
+ * scope <em>is</em> the access boundary, a residual scope filter would also mean
+ * ranking memories the caller may not see and discarding them afterwards.
  *
- * <p>Membership is a gate, not a row filter: it references no column of
- * {@code memories}, so a non-member matches nothing at all on the goal rather
- * than matching "only the public parts of it".
+ * <p>So each grant is written to line up with the prefix of the V5 index,
+ * {@code (goal_id, scope, embedding)}. Each is executed as its own search and
+ * the results merged, which means every candidate the engine ever ranks is one
+ * the agent was already entitled to. Scope is enforced <em>by the storage
+ * engine, before similarity is computed</em> - the property this project claims
+ * for CockroachDB, now actually true rather than aspirational.
+ *
+ * <p>Membership is checked first and separately. It depends on no row of
+ * {@code memories}, so making it a predicate would have penalised every query;
+ * as a gate it also means a non-member's search never reaches the memory table
+ * at all.
  *
  * <p><strong>On GLOBAL:</strong> the V3 CHECK constraint requires global
- * memories to have a null {@code goal_id}, so they can never satisfy the goal
- * equality above and are absent from this predicate by construction. That is
- * honest rather than accidental - a global search cannot share a goal-prefixed
- * index scan and needs its own path. Promotion to global is deferred, so that
- * path is not built.
+ * memories to have a null {@code goal_id}, so they fall outside every
+ * goal-prefixed grant by construction. A global search needs its own index and
+ * its own path; promotion to global is deferred, so that path is not built. Its
+ * absence here is deliberate, not an oversight.
  */
 @Component
 public class MemoryAccessPolicy {
 
-    /**
-     * What {@code agentId} may read inside {@code goalId}: the goal's shared
-     * memory if it is an active member, plus its own private scratch work.
-     *
-     * <p>Private memory of <em>other</em> agents is unreachable here, and no
-     * caller can widen it - the predicate is opaque to them.
-     */
-    public Predicate withinGoal(UUID agentId, UUID goalId) {
-        String sql = """
-                m.goal_id = ?
-                  AND EXISTS (
-                      SELECT 1 FROM goal_agents ga
-                      WHERE ga.goal_id = ?
-                        AND ga.agent_id = ?
-                        AND ga.status = 'ACTIVE')
-                  AND (m.scope = 'GOAL'
-                       OR (m.scope = 'PRIVATE' AND m.agent_id = ?))""";
+    private final JdbcTemplate jdbc;
 
-        return new Predicate(sql, List.of(goalId, goalId, agentId, agentId));
+    public MemoryAccessPolicy(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
     }
 
     /**
-     * A SQL fragment and the parameters it expects, in order.
+     * What {@code agentId} may read inside {@code goalId}: the goal's shared
+     * memory, plus its own private scratch work.
      *
-     * <p>Kept together so a caller cannot bind the parameters of one predicate
-     * to the SQL of another - the kind of mistake that produces a query which
-     * runs, returns rows, and is quietly wrong.
-     *
-     * <p>The fragment references the {@code memories} table as {@code m}.
+     * <p>Returns no grants at all for a non-member, so a caller looping over
+     * grants runs zero queries and can leak nothing. The empty list is the
+     * denial - there is no separate "denied" branch for a caller to forget.
      */
-    public record Predicate(String sql, List<Object> parameters) {
+    public List<Grant> grantsWithin(UUID agentId, UUID goalId) {
+        if (!isActiveMember(agentId, goalId)) {
+            return List.of();
+        }
+
+        return List.of(
+                // Shared goal memory. Both columns are index prefix columns, so
+                // this is served entirely from the vector index.
+                new Grant("m.goal_id = ? AND m.scope = 'GOAL'",
+                        List.of(goalId)),
+
+                // The agent's own private memory. agent_id is a residual filter
+                // here, which is acceptable where it was not above: one agent's
+                // private memory on one goal is a small bounded set, and the
+                // optimiser serves it from memories_agent_scope_idx rather than
+                // scanning. Crucially it can only ever narrow to this agent.
+                new Grant("m.goal_id = ? AND m.scope = 'PRIVATE' AND m.agent_id = ?",
+                        List.of(goalId, agentId)));
+    }
+
+    /**
+     * Whether an agent is currently an active participant in a goal.
+     *
+     * <p>"Currently" is the operative word: an agent that has left keeps its
+     * identity and its authorship, and loses its access. Agent identity is not
+     * the source of truth for goal state - membership is.
+     */
+    public boolean isActiveMember(UUID agentId, UUID goalId) {
+        Boolean member = this.jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1 FROM goal_agents
+                    WHERE goal_id = ? AND agent_id = ? AND status = 'ACTIVE')
+                """, Boolean.class, goalId, agentId);
+        return Boolean.TRUE.equals(member);
+    }
+
+    /**
+     * One slice of what an agent may see, and the parameters it expects.
+     *
+     * <p>SQL and parameters travel together so a caller cannot bind the
+     * parameters of one grant to the SQL of another - the kind of mistake that
+     * produces a query which runs, returns rows, and is quietly wrong.
+     *
+     * <p>The fragment references the {@code memories} table as {@code m}. The
+     * first parameter of every grant is the goal, matching the leading index
+     * column.
+     */
+    public record Grant(String sql, List<Object> parameters) {
     }
 }

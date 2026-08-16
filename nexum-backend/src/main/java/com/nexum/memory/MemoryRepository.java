@@ -1,7 +1,10 @@
 package com.nexum.memory;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.StringJoiner;
 import java.util.UUID;
 
@@ -12,10 +15,10 @@ import org.springframework.stereotype.Repository;
 /**
  * All SQL over {@code memories}, and the only place it is written.
  *
- * <p>Every agent-facing read here takes its {@code WHERE} clause from
+ * <p>Every agent-facing read here derives its {@code WHERE} clause from
  * {@link MemoryAccessPolicy} rather than composing one locally. That is the
- * mechanical reason the isolation guarantee holds: there is no query for a
- * reviewer to miss, because there is no other query.
+ * mechanical reason the isolation guarantee holds: there is no second query for
+ * a reviewer to miss, because there is no second query.
  *
  * <p>Hand-written JDBC, not JPA, for the reason given in the handoff - Hibernate
  * has no mapping for CockroachDB's {@code VECTOR}, and a partially-mapped entity
@@ -82,34 +85,60 @@ public class MemoryRepository {
     /**
      * Semantic retrieval: what this agent may see, ranked by meaning.
      *
+     * <p>Runs one search per grant rather than one query with a combined
+     * predicate. That is what keeps each search on a vector index prefix - an
+     * {@code OR} across scopes would be a residual filter, and the optimiser
+     * answers those with a full scan and a sort. Two indexed top-k searches over
+     * a few hundred vectors beat one scan of every memory on the goal, and more
+     * importantly the engine only ever ranks rows this agent is entitled to.
+     *
      * <p>{@code <=>} is cosine distance, matching the {@code vector_cosine_ops}
-     * class the V4 index was built with. Using a different operator would still
-     * return rows - just from a full scan, silently losing the index this whole
+     * class the indexes were built with. A different operator would still return
+     * rows - just from a full scan, silently discarding the index this whole
      * design is an argument for.
      *
-     * <p>Restricted to READY rows because an unembedded memory has no position
-     * in vector space to rank. Those are not lost; they surface through
-     * {@link #searchRecent} until their vectors land.
+     * <p>Each grant is asked for the full limit because the merge cannot know in
+     * advance which scope holds the best matches; taking {@code limit} from the
+     * union afterwards is what makes the result identical to what a single
+     * ranked query would have returned.
      */
     public List<ScoredMemory> searchSemantic(UUID agentId, UUID goalId, float[] query, int limit) {
-        MemoryAccessPolicy.Predicate scope = this.policy.withinGoal(agentId, goalId);
+        String vector = toLiteral(query);
+        Map<UUID, ScoredMemory> merged = new LinkedHashMap<>();
 
-        List<Object> args = new ArrayList<>();
-        args.add(toLiteral(query));
-        args.addAll(scope.parameters());
-        args.add(limit);
+        for (MemoryAccessPolicy.Grant grant : this.policy.grantsWithin(agentId, goalId)) {
+            List<Object> args = new ArrayList<>();
+            args.add(vector);
+            args.addAll(grant.parameters());
+            args.add(limit);
 
-        return this.jdbc.query("""
-                SELECT %s, m.embedding <=> ?::VECTOR AS distance
-                FROM memories m
-                WHERE %s
-                  AND m.embedding_status = 'READY'
-                ORDER BY distance
-                LIMIT ?
-                """.formatted(COLUMNS, scope.sql()),
-                (rs, rowNum) -> new ScoredMemory(MAPPER.mapRow(rs, rowNum),
-                        rs.getDouble("distance")),
-                args.toArray());
+            List<ScoredMemory> hits = this.jdbc.query("""
+                    SELECT %s, m.embedding <=> ?::VECTOR AS distance
+                    FROM memories m
+                    WHERE %s
+                    ORDER BY distance
+                    LIMIT ?
+                    """.formatted(COLUMNS, grant.sql()),
+                    (rs, rowNum) -> new ScoredMemory(MAPPER.mapRow(rs, rowNum),
+                            rs.getDouble("distance")),
+                    args.toArray());
+
+            for (ScoredMemory hit : hits) {
+                // A memory with no vector yet has no position to be ranked from;
+                // whatever distance the engine reported for a NULL embedding is
+                // not a similarity. Dropped here rather than as a SQL predicate,
+                // because embedding_status is not an index prefix column and
+                // filtering on it would cost the vector index.
+                if (hit.memory().embedded()) {
+                    merged.putIfAbsent(hit.memory().id(), hit);
+                }
+            }
+        }
+
+        return merged.values().stream()
+                .sorted(Comparator.comparingDouble(ScoredMemory::distance))
+                .limit(limit)
+                .toList();
     }
 
     /**
@@ -121,11 +150,23 @@ public class MemoryRepository {
      * a demo - semantic search over zero embedded rows returns nothing, and an
      * agent that retrieves nothing behaves as though the collective knows
      * nothing. This keeps memory useful in that window.
+     *
+     * <p>Here the grants are combined with {@code OR} into a single query. There
+     * is no vector index at stake on this path, so the reason to keep them apart
+     * does not apply, and one ordered query gives a correct global ranking.
      */
     public List<Memory> searchRecent(UUID agentId, UUID goalId, int limit) {
-        MemoryAccessPolicy.Predicate scope = this.policy.withinGoal(agentId, goalId);
+        List<MemoryAccessPolicy.Grant> grants = this.policy.grantsWithin(agentId, goalId);
+        if (grants.isEmpty()) {
+            return List.of();
+        }
 
-        List<Object> args = new ArrayList<>(scope.parameters());
+        StringJoiner predicate = new StringJoiner(") OR (", "(", ")");
+        List<Object> args = new ArrayList<>();
+        for (MemoryAccessPolicy.Grant grant : grants) {
+            predicate.add(grant.sql());
+            args.addAll(grant.parameters());
+        }
         args.add(limit);
 
         return this.jdbc.query("""
@@ -134,7 +175,7 @@ public class MemoryRepository {
                 WHERE %s
                 ORDER BY m.confidence DESC, m.created_at DESC
                 LIMIT ?
-                """.formatted(COLUMNS, scope.sql()),
+                """.formatted(COLUMNS, predicate),
                 MAPPER, args.toArray());
     }
 
