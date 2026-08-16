@@ -40,6 +40,7 @@ public class EventLog {
             // Observability must not be able to break the thing it observes.
             log.warn("Failed to append {} event for goal {}", type, goalId, ex);
         }
+        
     }
 
     public List<Event> since(UUID goalId, long afterSeq, int limit) {
