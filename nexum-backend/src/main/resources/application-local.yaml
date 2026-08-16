@@ -1,0 +1,9 @@
+# Local development against docker compose (see compose.yaml at repo root).
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:26257/nexum?sslmode=disable
+    username: root
+    password:
+  ai:
+    model:
+      embedding: ollama

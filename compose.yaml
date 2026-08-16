@@ -1,0 +1,73 @@
+# Local development stack for Nexum.
+#
+#   docker compose up -d
+#   curl -s http://localhost:11434/api/pull -d '{"name":"mxbai-embed-large"}'
+#
+# CockroachDB DB Console: http://localhost:8081
+# SQL:                    docker compose exec cockroach ./cockroach sql --insecure
+
+services:
+  cockroach:
+    # v25.4, NOT v25.2. Vector indexing arrived in 25.2 but only implemented the
+    # default vector_l2_ops operator class - vector_cosine_ops (the right one for
+    # semantic text) errors with "unimplemented" there. 25.4 supports all three:
+    # vector_l2_ops, vector_cosine_ops, vector_ip_ops.
+    image: 'cockroachdb/cockroach:latest-v25.4'
+    command: start-single-node --insecure --http-addr=0.0.0.0:8080
+    ports:
+      - '26257:26257'
+      - '8081:8080'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8080/health?ready=1']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - cockroach-data:/cockroach/cockroach-data
+
+  # Creates the database and enables the vector index feature flag.
+  # Runs once, then exits. Idempotent.
+  cockroach-init:
+    image: 'cockroachdb/cockroach:latest-v25.4'
+    depends_on:
+      cockroach:
+        condition: service_healthy
+    entrypoint: ['/bin/bash', '-c']
+    command:
+      - |
+        set -e
+        ./cockroach sql --insecure --host=cockroach:26257 \
+          -e "CREATE DATABASE IF NOT EXISTS nexum;"
+        # The feature flag may not exist on versions where vector indexing is no
+        # longer gated. Not fatal either way.
+        ./cockroach sql --insecure --host=cockroach:26257 \
+          -e "SET CLUSTER SETTING feature.vector_index.enabled = true;" \
+          || echo "vector_index feature flag not present on this version - continuing"
+        echo "cockroach-init complete"
+    restart: on-failure
+
+  # Local embedding provider so development does not depend on AWS credentials.
+  #
+  # This image is large (~4GB) because it bundles CUDA and ROCm GPU runtimes we
+  # never use. alpine/ollama advertises the same thing at 69MB, but it ships
+  # WITHOUT the llama-server inference binary, so it cannot actually run a model
+  # ("llama-server binary not found"). There is no official CPU-only slim tag
+  # (ollama/ollama#7184 is still open).
+  #
+  # If the download is not worth it, delete this service entirely and run with
+  # --spring.profiles.active=aws to embed via Bedrock Titan instead. Same 1024
+  # dims, no container, and it is the provider the demo actually uses.
+  #
+  # mxbai-embed-large produces 1024-dim vectors, matching Titan Text Embeddings
+  # v2 at 1024 dims - so the schema is identical across local and deployed
+  # profiles. The model itself (~670MB) downloads into the volume on first pull.
+  ollama:
+    image: 'ollama/ollama:latest'
+    ports:
+      - '11434:11434'
+    volumes:
+      - ollama-data:/root/.ollama
+
+volumes:
+  cockroach-data:
+  ollama-data:

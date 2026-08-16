@@ -1,0 +1,32 @@
+HELP.md
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### VS Code ###
+.vscode/
+
+### Env / secrets ###
+.env
+*.local.yaml
+
+### Node (frontend) ###
+node_modules/
+.next/
+
+### Scratch ###
+_to_delete/
+
+Nexum_Project_Master_Spec.md
+Nexum_Spec_Review.md

@@ -1,0 +1,16 @@
+// Root build file for the Nexum monorepo.
+// Module-specific configuration lives in each subproject's build.gradle.
+
+plugins {
+    id 'org.springframework.boot' version '4.1.0' apply false
+    id 'io.spring.dependency-management' version '1.1.7' apply false
+}
+
+allprojects {
+    group = 'com.nexum'
+    version = '0.0.1-SNAPSHOT'
+
+    repositories {
+        mavenCentral()
+    }
+}

@@ -1,0 +1,56 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot'
+	id 'io.spring.dependency-management'
+}
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
+
+ext {
+	set('springAiVersion', "2.0.0")
+}
+
+dependencies {
+	// --- web / persistence ------------------------------------------------
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+
+	// CockroachDB speaks the PostgreSQL wire protocol: Postgres driver +
+	// Flyway's Postgres module. Hibernate dialect is set in application.yaml.
+	implementation 'org.flywaydb:flyway-database-postgresql'
+	runtimeOnly 'org.postgresql:postgresql'
+
+	// --- AI providers -----------------------------------------------------
+	// Groq for reasoning, via its OpenAI-compatible API (base-url override).
+	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+	// Ollama for local-dev embeddings (mxbai-embed-large -> 1024 dims).
+	implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
+	// Bedrock Titan Text Embeddings v2 for deployed embeddings (1024 dims).
+	// Also satisfies the hackathon's "at least one AWS service" requirement.
+	// If this artifact fails to resolve, comment it out and stay on Ollama -
+	// nothing else in the codebase imports it directly.
+	implementation 'org.springframework.ai:spring-ai-starter-model-bedrock'
+
+	// --- test -------------------------------------------------------------
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-flyway-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+	}
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
