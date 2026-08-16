@@ -84,14 +84,21 @@ Exit code is non-zero if any check fails.
 | vector similarity | cosine ranking is semantically sane and hits the C-SPANN index |
 | groq reasoning | Groq's OpenAI-compatible endpoint is reachable with your key |
 
-## Deployed profile
+## Embedding providers
+
+**Bedrock Titan Text Embeddings v2 (1024-dim) is the default** — no profile
+needed. Credentials come from the AWS SDK default chain: env vars
+(`AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) locally, the EC2
+instance role in production.
+
+Offline fallback, only if you have no AWS access:
 
 ```bash
-./gradlew :nexum-backend:bootRun --args='--spring.profiles.active=aws'
+./gradlew :nexum-backend:bootRun --args='--spring.profiles.active=local,ollama,skeleton'
 ```
 
-Switches embeddings to Bedrock Titan Text Embeddings v2. Requires
-`AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
+Needs the official `ollama/ollama` image. Vectors from Ollama and Bedrock are
+**not** interchangeable — do not mix them in one database.
 
 ## CockroachDB Cloud
 

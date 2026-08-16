@@ -28,5 +28,9 @@ node_modules/
 ### Scratch ###
 _to_delete/
 
+### Internal working documents (not part of the public submission) ###
 Nexum_Project_Master_Spec.md
 Nexum_Spec_Review.md
+HANDOFF.md
+BUILD_PLAN.md
+CLAUDE.md

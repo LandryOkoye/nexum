@@ -46,7 +46,11 @@ spring:
     # (openai/groq, ollama, bedrock) so Spring AI must be told which to wire.
     model:
       chat: openai
-      embedding: ollama
+      # Bedrock is the DEFAULT, not a profile opt-in. Local dev and the deployed
+      # app then use the same embedding provider, so vectors are identical
+      # everywhere - the same reasoning as using real CockroachDB over Postgres.
+      # Ollama is an offline fallback behind the 'ollama' profile.
+      embedding: bedrock-titan
 
     # Groq exposes an OpenAI-compatible API, so the OpenAI starter is pointed
     # at it via base-url. Groq does NOT serve embeddings - hence the separate
@@ -59,13 +63,17 @@ spring:
           model: ${NEXUM_GROQ_MODEL:llama-3.3-70b-versatile}
           temperature: 0.2
 
-    ollama:
-      base-url: ${NEXUM_OLLAMA_URL:http://localhost:11434}
-      init:
-        pull-model-strategy: never
-      embedding:
-        options:
-          model: mxbai-embed-large
+    bedrock:
+      aws:
+        region: ${AWS_REGION:us-east-1}
+        # Credentials are deliberately NOT set here. Omitting them lets the AWS
+        # SDK default credential chain run, which picks up (in order) env vars,
+        # the shared profile, and - crucially - the EC2 instance role in
+        # production. Setting them to empty strings would override the chain and
+        # break instance-role auth on the deployed box.
+      titan:
+        embedding:
+          model: amazon.titan-embed-text-v2:0
 
 nexum:
   embedding:
@@ -79,20 +87,26 @@ logging:
     com.nexum: DEBUG
 
 ---
-# Deployed profile: swap embeddings to Bedrock Titan.
-#   ./gradlew :nexum-backend:bootRun --args='--spring.profiles.active=aws'
+# Offline fallback ONLY. Use when you have no AWS access and need to keep
+# working: --spring.profiles.active=local,ollama
+#
+# Requires the official ollama/ollama image (~4GB) - alpine/ollama does NOT
+# work, it ships without the llama-server inference binary.
+#   curl -s http://localhost:11434/api/pull -d '{"name":"mxbai-embed-large"}'
+#
+# mxbai-embed-large is 1024-dim, matching Titan v2, so the schema is unchanged.
+# Vectors will NOT match Bedrock-generated ones - do not mix them in one database.
 spring:
   config:
     activate:
-      on-profile: aws
+      on-profile: ollama
   ai:
     model:
-      embedding: bedrock-titan
-    bedrock:
-      aws:
-        region: ${AWS_REGION:us-east-1}
-        access-key: ${AWS_ACCESS_KEY_ID:}
-        secret-key: ${AWS_SECRET_ACCESS_KEY:}
-      titan:
-        embedding:
-          model: amazon.titan-embed-text-v2:0
+      embedding: ollama
+    ollama:
+      base-url: ${NEXUM_OLLAMA_URL:http://localhost:11434}
+      init:
+        pull-model-strategy: never
+      embedding:
+        options:
+          model: mxbai-embed-large
