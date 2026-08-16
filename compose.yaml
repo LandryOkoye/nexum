@@ -13,7 +13,17 @@ services:
     # semantic text) errors with "unimplemented" there. 25.4 supports all three:
     # vector_l2_ops, vector_cosine_ops, vector_ip_ops.
     image: 'cockroachdb/cockroach:latest-v25.4'
-    command: start-single-node --insecure --http-addr=0.0.0.0:8080
+    # Memory is pinned explicitly. Left alone, CockroachDB sizes its cache and
+    # SQL memory as a fraction of TOTAL host memory - which it shares here with
+    # a Gradle daemon, the app JVM, and a browser. Building a vector index over
+    # a few thousand rows was enough to get the container OOM-killed (exit 137)
+    # on an 8GB laptop, taking the database out mid-session. Fixed budgets cost
+    # a little throughput and remove a whole class of "it died and I do not know
+    # why" during a demo.
+    command: >
+      start-single-node --insecure --http-addr=0.0.0.0:8080
+      --cache=256MiB --max-sql-memory=512MiB
+    mem_limit: 2g
     ports:
       - '26257:26257'
       - '8081:8080'
