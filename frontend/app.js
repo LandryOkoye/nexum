@@ -26,6 +26,13 @@ const state = {
     stream: null,
     poller: null,
     recovery: null,
+    /* Signatures of the last painted panels. The poller runs every couple of
+       seconds, and blindly re-rendering innerHTML on a timer replaces the very
+       DOM nodes the operator is reaching for - a click that lands between
+       mousedown and mouseup on a replaced node is simply lost. Repainting only
+       on real change keeps the Kill button, the open dropdown, and any hover
+       state stable. */
+    painted: { agents: '', tasks: '', stats: '' },
 };
 
 /* The five events that constitute the recovery proof, in the order they must
@@ -117,6 +124,9 @@ function teardown() {
     state.events = [];
     state.seenSeq = 0;
     state.recovery = null;
+    // Cleared so the next goal paints from scratch rather than being skipped as
+    // "unchanged" against the previous goal's signature.
+    state.painted = { agents: '', tasks: '', stats: '' };
     connState('idle', 'idle');
 }
 
@@ -243,10 +253,23 @@ async function refresh() {
     }
 }
 
+/** Returns true when the value differs from what was last painted. */
+function changed(key, value) {
+    const signature = JSON.stringify(value);
+    if (state.painted[key] === signature) { return false; }
+    state.painted[key] = signature;
+    return true;
+}
+
 function paintGoal() {
     const goal = state.goal;
     $('#goal-title').textContent = goal.title;
     $('#goal-desc').textContent = goal.description || '';
+
+    if (!changed('stats', [goal.memberCount, goal.completedTaskCount, goal.taskCount,
+        goal.memoryCount, state.events.length])) {
+        return;
+    }
     $('#goal-stats').innerHTML = `
         <div class="stat"><span>Agents</span><b>${goal.memberCount}</b></div>
         <div class="stat"><span>Tasks</span><b>${goal.completedTaskCount}/${goal.taskCount}</b></div>
@@ -261,6 +284,17 @@ function liveRunOf(agentId) {
 
 function paintAgents() {
     const host = $('#agent-list');
+
+    // Keyed on everything the card actually shows, so a heartbeat timestamp
+    // ticking over does not count as a change.
+    if (!changed('agents', state.agents.map((agent) => [
+        agent.id, agent.name, agent.role, agent.membershipStatus, agent.memoriesAuthored,
+        liveRunOf(agent.id)?.id ?? null,
+        state.runs.some((r) => r.agentId === agent.id && r.status === 'DEAD'),
+    ]))) {
+        return;
+    }
+
     if (!state.agents.length) {
         host.innerHTML = `<div class="empty"><strong>No agents yet</strong>
             Add one to start work on this mission.</div>`;
@@ -315,6 +349,14 @@ function paintAgents() {
 
 function paintTasks() {
     const host = $('#task-list');
+
+    if (!changed('tasks', state.tasks.map((task) => [
+        task.id, task.title, task.status, task.attemptCount, task.checkpointCount,
+        task.leaseRunId,
+    ]))) {
+        return;
+    }
+
     if (!state.tasks.length) {
         host.innerHTML = `<div class="empty"><strong>No tasks</strong>
             Add one for the agents to claim.</div>`;
