@@ -60,7 +60,14 @@ spring:
       base-url: https://api.groq.com/openai/v1
       chat:
         options:
-          model: ${NEXUM_GROQ_MODEL:llama-3.3-70b-versatile}
+          # Groq retires models with little notice. llama-3.3-70b-versatile was
+          # answering requests on 16 Aug and returned model_not_found hours
+          # later, which surfaced as a 404 that looked like a bad base-url.
+          # If this 404s, list what is actually live before touching anything
+          # else:
+          #   curl https://api.groq.com/openai/v1/models \
+          #     -H "Authorization: Bearer $GROQ_API_KEY"
+          model: ${NEXUM_GROQ_MODEL:openai/gpt-oss-120b}
           temperature: 0.2
 
     bedrock:

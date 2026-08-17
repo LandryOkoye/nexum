@@ -67,7 +67,6 @@ public class ModelStepPlanner implements StepPlanner {
     public Proposal plan(Context context) {
         ChatClient.Builder builder = this.chatClients.getIfAvailable();
         if (builder == null) {
-            log.debug("No chat model configured; planning without one");
             return fallback(context, "no reasoning provider configured");
         }
 
@@ -85,8 +84,8 @@ public class ModelStepPlanner implements StepPlanner {
             return fallback(context, "interrupted waiting for a rate-limit permit");
         }
         catch (RuntimeException ex) {
-            log.warn("Model call failed at step {}; falling back", context.step(), ex);
-            return fallback(context, "model call failed: " + ex.getClass().getSimpleName());
+            return fallback(context, "model call failed: " + ex.getClass().getSimpleName()
+                    + ": " + ex.getMessage());
         }
     }
 
@@ -192,8 +191,18 @@ public class ModelStepPlanner implements StepPlanner {
     /**
      * What to do when the model is unavailable or unintelligible: search early,
      * finish late. Never stall.
+     *
+     * <p>Always logs. An earlier version degraded silently on some paths, and the
+     * result was an agent that looked like it was working - searching, saving
+     * checkpoints, completing - while every single step was actually a fallback,
+     * because the model was returning 404 and nothing said so. Graceful
+     * degradation that is also invisible is worse than a crash: the system lies
+     * to you convincingly.
      */
     private static Proposal fallback(Context context, String why) {
+        log.warn("Step {} of {} fell back to a default action: {}", context.step(),
+                context.maxSteps(), why);
+
         if (lastStep(context)) {
             return Proposal.complete(context.progressSummary() != null ? context.progressSummary()
                     : "Completed without model guidance", why);
