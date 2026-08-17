@@ -214,9 +214,16 @@ class AgentLoopTests {
                 runId);
     }
 
+    /**
+     * Scoped to this test's own goal. Matching on content alone passed the first
+     * time and failed on every rerun, because earlier runs had left rows with
+     * the same text and the lookup then found several - a test that only works
+     * against a database nobody has used yet is not much of a test.
+     */
     private Double confidenceOf(String content) {
-        return this.jdbc.queryForObject("SELECT confidence FROM memories WHERE content = ?",
-                Double.class, content);
+        return this.jdbc.queryForObject("""
+                SELECT confidence FROM memories WHERE goal_id = ? AND content = ?
+                """, Double.class, this.goal, content);
     }
 
     private List<String> eventTypesFor(UUID goalId) {
