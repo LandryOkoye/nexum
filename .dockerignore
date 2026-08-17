@@ -1,0 +1,18 @@
+# Keeps the build context small and, more importantly, keeps secrets and stale
+# local build output from being copied into an image layer.
+.git
+.gradle
+build/
+*/build/
+.idea
+.env
+_to_delete/
+frontend/node_modules
+**/*.log
+
+# Internal working documents. Not secret, but not part of the deployed image.
+HANDOFF.md
+BUILD_PLAN.md
+CLAUDE.md
+Nexum_Project_Master_Spec.md
+Nexum_Spec_Review.md

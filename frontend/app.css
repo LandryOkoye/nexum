@@ -1,0 +1,606 @@
+/* Nexum control-plane UI.
+ *
+ * Dark by intent, not fashion: this is an operations console that will be shown
+ * on a projector and recorded, where a bright surface blows out and status
+ * colour is the first thing a viewer reads.
+ *
+ * Fonts are system stacks rather than a webfont import. The deployed app runs
+ * under a strict `default-src 'self'` policy and is meant to be self-contained -
+ * a demo should not depend on Google's CDN being reachable when it matters.
+ */
+
+:root {
+    /* Surfaces: "code dark", deepening toward the page background. */
+    --bg: #080D18;
+    --surface: #0F172A;
+    --surface-2: #17223B;
+    --surface-3: #1E293B;
+    --line: #253352;
+    --line-soft: #1B2740;
+
+    --text: #F8FAFC;
+    --muted: #94A3B8;
+    --faint: #64748B;
+
+    /* Status. Green means a worker is alive and holding its lease. */
+    --run: #22C55E;
+    --run-dim: #16653A;
+    --warn: #F59E0B;
+    --danger: #EF4444;
+    --info: #38BDF8;
+    --recall: #A78BFA;
+
+    --radius: 12px;
+    --radius-sm: 8px;
+    --gap: 20px;
+
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.28);
+
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo,
+            Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+            sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+    margin: 0;
+    background:
+        radial-gradient(1100px 620px at 78% -10%, #14213F 0%, transparent 60%),
+        radial-gradient(900px 520px at 8% 0%, #10203A 0%, transparent 55%),
+        var(--bg);
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: var(--sans);
+    /* 16px floor: smaller body text on a phone triggers iOS zoom-on-focus. */
+    font-size: 16px;
+    line-height: 1.55;
+    min-height: 100vh;
+}
+
+h1, h2, h3 { line-height: 1.2; margin: 0; letter-spacing: -0.01em; }
+
+/* Keyboard focus must always be visible, including on custom controls. */
+:focus-visible {
+    outline: 2px solid var(--info);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+.icon { width: 16px; height: 16px; flex: none; }
+
+/* ------------------------------------------------------------- top bar --- */
+
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px clamp(16px, 4vw, 40px);
+    background: rgb(8 13 24 / 0.86);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line-soft);
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: inherit;
+}
+
+.brand-mark svg {
+    width: 30px; height: 30px;
+    fill: none;
+    stroke: var(--line);
+    stroke-width: 5;
+}
+.brand-mark circle:first-of-type { fill: var(--run); stroke: none; }
+.brand-mark circle { fill: var(--info); stroke: none; }
+
+.brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+.brand-text strong { font-family: var(--mono); font-size: 17px; letter-spacing: 0.14em; }
+.brand-text em { font-style: normal; font-size: 11px; color: var(--faint); letter-spacing: 0.04em; }
+
+.conn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    padding: 6px 12px;
+    border: 1px solid var(--line-soft);
+    border-radius: 999px;
+}
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.conn[data-state="live"] .conn-dot { background: var(--run); animation: pulse 2s ease-in-out infinite; }
+.conn[data-state="live"] { color: var(--run); border-color: var(--run-dim); }
+.conn[data-state="down"] .conn-dot { background: var(--danger); }
+.conn[data-state="down"] { color: var(--danger); }
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgb(34 197 94 / 0.5); }
+    50% { opacity: 0.75; box-shadow: 0 0 0 6px rgb(34 197 94 / 0); }
+}
+
+/* ------------------------------------------------------------- layout ---- */
+
+.wrap {
+    width: min(100% - 32px, 1180px);
+    margin: 0 auto;
+    padding: 32px 0 80px;
+}
+.wrap.wide { width: min(100% - 32px, 1560px); }
+
+.backlink {
+    display: inline-flex; align-items: center; gap: 8px;
+    color: var(--muted); text-decoration: none;
+    font-size: 14px; margin-bottom: 20px;
+    transition: color 200ms ease;
+}
+.backlink:hover { color: var(--text); }
+
+/* --------------------------------------------------------------- hero ---- */
+
+.hero { padding: 48px 0 40px; max-width: 780px; }
+.hero h1 { font-size: clamp(34px, 6vw, 60px); font-weight: 800; letter-spacing: -0.03em; }
+.hero-accent {
+    background: linear-gradient(96deg, var(--run), var(--info));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hero-sub {
+    margin: 20px 0 0;
+    color: var(--muted);
+    font-size: 17px;
+    /* Comfortable measure; long lines are hard to track back from. */
+    max-width: 62ch;
+}
+.hero-sub strong { color: var(--text); font-weight: 600; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+
+.section-title {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.14em;
+    color: var(--faint); font-family: var(--mono); font-weight: 600;
+    margin: 40px 0 16px;
+}
+
+/* ------------------------------------------------------------- buttons --- */
+
+.btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    /* 44px minimum height: anything smaller is a miss on touch. */
+    min-height: 44px;
+    padding: 10px 18px;
+    font-family: var(--sans); font-size: 14px; font-weight: 600;
+    color: var(--text);
+    background: var(--surface-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+.btn:hover:not(:disabled) { background: #26365C; border-color: #3B5280; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-primary { background: var(--run); border-color: var(--run); color: #04220F; }
+.btn-primary:hover:not(:disabled) { background: #34D96C; border-color: #34D96C; }
+
+.btn-ghost { background: transparent; }
+.btn-ghost:hover:not(:disabled) { background: var(--surface-3); }
+
+.btn-danger { background: transparent; border-color: #6B2020; color: #FCA5A5; }
+.btn-danger:hover:not(:disabled) { background: var(--danger); border-color: var(--danger); color: #2A0505; }
+
+.btn-lg { min-height: 52px; padding: 14px 26px; font-size: 15px; }
+.btn-sm { min-height: 36px; padding: 6px 12px; font-size: 13px; }
+
+/* --------------------------------------------------------------- cards --- */
+
+.card {
+    background: linear-gradient(180deg, var(--surface-2), var(--surface));
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius);
+    padding: 22px;
+    box-shadow: var(--shadow);
+}
+
+.newgoal { max-width: 620px; margin-bottom: 12px; }
+.newgoal h2 { font-size: 18px; margin-bottom: 16px; }
+
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.field-grow { flex: 1 1 220px; }
+label { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+input, textarea, select {
+    font-family: var(--sans);
+    font-size: 15px;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 11px 13px;
+    min-height: 44px;
+    width: 100%;
+    transition: border-color 200ms ease;
+}
+input:hover, textarea:hover, select:hover { border-color: #3B5280; }
+input::placeholder, textarea::placeholder { color: var(--faint); }
+textarea { resize: vertical; min-height: 76px; }
+select { cursor: pointer; }
+
+.row-end { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
+
+/* --------------------------------------------------------- goal cards ---- */
+
+.goal-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: var(--gap);
+}
+
+.goal-card {
+    display: block;
+    text-align: left;
+    text-decoration: none;
+    color: inherit;
+    background: linear-gradient(180deg, var(--surface-2), var(--surface));
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius);
+    padding: 20px;
+    cursor: pointer;
+    /* Colour/border transitions only - a scale on hover nudges neighbouring
+       cards and makes a grid feel unstable. */
+    transition: border-color 200ms ease, background 200ms ease;
+}
+.goal-card:hover { border-color: #3B5280; background: linear-gradient(180deg, #1B2946, var(--surface-2)); }
+.goal-card h3 { font-size: 17px; margin-bottom: 8px; }
+.goal-card p {
+    color: var(--muted); font-size: 14px; margin: 0 0 16px;
+    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden;
+}
+
+.mini-stats { display: flex; flex-wrap: wrap; gap: 14px; font-family: var(--mono); font-size: 12px; color: var(--faint); }
+.mini-stats b { color: var(--text); font-weight: 600; }
+
+/* --------------------------------------------------------- goal header --- */
+
+.goal-head {
+    display: flex; flex-wrap: wrap; gap: 24px;
+    align-items: flex-start; justify-content: space-between;
+    margin-bottom: 24px;
+}
+.goal-head-main { flex: 1 1 420px; min-width: 0; }
+.goal-head h1 { font-size: clamp(22px, 3vw, 30px); font-weight: 700; }
+.goal-desc { color: var(--muted); font-size: 15px; margin: 8px 0 0; max-width: 72ch; }
+
+.stat-strip { display: flex; flex-wrap: wrap; gap: 10px; }
+.stat {
+    background: var(--surface);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    padding: 10px 16px;
+    min-width: 92px;
+}
+.stat span { display: block; font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.1em; }
+.stat b { font-family: var(--mono); font-size: 21px; font-weight: 600; }
+
+/* ------------------------------------------------------------ recovery --- */
+
+/* The centrepiece. When a worker dies this appears and fills in step by step,
+   so the sequence is legible to someone watching for the first time. */
+.recovery {
+    border: 1px solid #6B4A12;
+    background: linear-gradient(180deg, #241B08, #14100A);
+    border-radius: var(--radius);
+    padding: 22px;
+    margin-bottom: 26px;
+}
+.recovery[data-done="true"] { border-color: var(--run-dim); background: linear-gradient(180deg, #0C2418, #0A1712); }
+
+.recovery-head { display: flex; align-items: center; gap: 12px; }
+.recovery-head h2 { font-size: 17px; }
+.pulse-dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--warn);
+    animation: pulse-warn 1.4s ease-in-out infinite;
+}
+.recovery[data-done="true"] .pulse-dot { background: var(--run); animation: none; }
+@keyframes pulse-warn {
+    0%, 100% { box-shadow: 0 0 0 0 rgb(245 158 11 / 0.55); }
+    60% { box-shadow: 0 0 0 9px rgb(245 158 11 / 0); }
+}
+
+.recovery-lede { color: var(--muted); font-size: 14px; margin: 10px 0 18px; max-width: 74ch; }
+
+.recovery-steps {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    counter-reset: step;
+}
+.recovery-steps li {
+    display: flex; align-items: flex-start; gap: 10px;
+    background: rgb(0 0 0 / 0.28);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    font-size: 13px;
+    color: var(--faint);
+    transition: color 250ms ease, border-color 250ms ease;
+}
+.recovery-steps li[data-hit="true"] { color: var(--text); border-color: var(--run-dim); }
+.step-num {
+    flex: none;
+    width: 22px; height: 22px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--surface-3); color: var(--faint);
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+}
+.recovery-steps li[data-hit="true"] .step-num { background: var(--run); color: #04220F; }
+.step-body strong { display: block; font-size: 13px; font-weight: 600; }
+.step-body time { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+
+/* ----------------------------------------------------------- workspace --- */
+
+.workspace {
+    display: grid;
+    gap: var(--gap);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+/* The timeline spans both rows on the right: it is the tallest thing on the
+   page and the thing a viewer watches during the recovery sequence. */
+.panel-timeline { grid-row: span 2; }
+.panel-memory { grid-column: 1 / -1; }
+
+.panel {
+    background: linear-gradient(180deg, var(--surface-2), var(--surface));
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius);
+    padding: 18px;
+    min-width: 0;
+    box-shadow: var(--shadow);
+}
+.panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 14px;
+}
+.panel-head h2 {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em;
+    font-family: var(--mono); font-weight: 600; color: var(--muted);
+}
+.panel-lede { color: var(--faint); font-size: 13px; margin: -4px 0 14px; max-width: 78ch; }
+
+.toggle { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.toggle input { width: auto; min-height: 0; accent-color: var(--run); cursor: pointer; }
+
+/* -------------------------------------------------------------- agents --- */
+
+.agent-list { display: grid; gap: 12px; }
+
+.agent {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--bg);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    padding: 13px 15px;
+    transition: border-color 250ms ease;
+}
+.agent[data-live="true"] { border-color: var(--run-dim); }
+.agent[data-dead="true"] { border-color: #4B1D1D; opacity: 0.72; }
+
+.avatar {
+    flex: none;
+    width: 40px; height: 40px; border-radius: 10px;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-weight: 700; font-size: 15px;
+    background: var(--surface-3); color: var(--info);
+    border: 1px solid var(--line);
+}
+.agent[data-live="true"] .avatar { color: var(--run); border-color: var(--run-dim); }
+.agent[data-dead="true"] .avatar { color: var(--danger); border-color: #4B1D1D; }
+
+.agent-main { flex: 1; min-width: 0; }
+.agent-name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+.agent-meta { font-family: var(--mono); font-size: 11.5px; color: var(--faint); margin-top: 3px; }
+.agent-actions { display: flex; gap: 8px; flex: none; }
+
+/* --------------------------------------------------------------- pills --- */
+
+.pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.06em;
+    padding: 3px 8px; border-radius: 999px;
+    border: 1px solid currentColor;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+/* Colour is never the only signal - every pill also carries its label. */
+.pill-run { color: var(--run); background: rgb(34 197 94 / 0.09); }
+.pill-idle { color: var(--faint); background: rgb(100 116 139 / 0.09); }
+.pill-dead { color: var(--danger); background: rgb(239 68 68 / 0.09); }
+.pill-orphan { color: var(--warn); background: rgb(245 158 11 / 0.09); }
+.pill-done { color: var(--info); background: rgb(56 189 248 / 0.09); }
+.pill-out { color: var(--recall); background: rgb(167 139 250 / 0.09); }
+
+/* --------------------------------------------------------------- tasks --- */
+
+.task-list { display: grid; gap: 10px; }
+
+.task {
+    background: var(--bg);
+    border: 1px solid var(--line-soft);
+    border-left: 3px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    transition: border-color 250ms ease;
+}
+.task[data-status="RUNNING"] { border-left-color: var(--run); }
+.task[data-status="ORPHANED"] { border-left-color: var(--warn); }
+.task[data-status="COMPLETED"] { border-left-color: var(--info); }
+.task[data-status="FAILED"] { border-left-color: var(--danger); }
+
+.task-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.task-title { font-weight: 600; font-size: 14.5px; min-width: 0; }
+.task-meta { font-family: var(--mono); font-size: 11.5px; color: var(--faint); margin-top: 6px; display: flex; flex-wrap: wrap; gap: 12px; }
+
+/* ------------------------------------------------------------ timeline --- */
+
+.timeline {
+    list-style: none; margin: 0; padding: 0 4px 0 0;
+    /* Fixed height so the panel does not grow without bound during a run and
+       push the memory explorer off-screen mid-demo. */
+    height: 560px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+}
+.timeline::-webkit-scrollbar { width: 8px; }
+.timeline::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+.ev {
+    display: grid;
+    grid-template-columns: 62px 1fr;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 13px;
+    animation: slide-in 250ms ease;
+}
+@keyframes slide-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.ev time { font-family: var(--mono); font-size: 11px; color: var(--faint); padding-top: 2px; }
+.ev-type {
+    font-family: var(--mono); font-size: 11.5px; font-weight: 700;
+    letter-spacing: 0.04em; color: var(--muted);
+}
+.ev-detail { color: var(--faint); font-size: 12.5px; margin-top: 2px; word-break: break-word; }
+
+.ev[data-kind="fail"] .ev-type { color: var(--danger); }
+.ev[data-kind="warn"] .ev-type { color: var(--warn); }
+.ev[data-kind="good"] .ev-type { color: var(--run); }
+.ev[data-kind="mem"] .ev-type { color: var(--recall); }
+.ev[data-kind="info"] .ev-type { color: var(--info); }
+
+/* The five recovery events get a visible marker so they stand out in a fast
+   scrolling feed - they are the proof and must not read as routine chatter. */
+.ev[data-key="true"] {
+    background: linear-gradient(90deg, rgb(167 139 250 / 0.12), transparent 70%);
+    border-left: 2px solid var(--recall);
+    padding-left: 8px;
+    margin-left: -10px;
+}
+
+/* -------------------------------------------------------------- memory --- */
+
+.memory-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.memory-controls .field { margin-bottom: 0; }
+.memory-controls select { min-width: 190px; }
+.memory-controls .btn { min-height: 44px; }
+
+.memory-meta {
+    font-family: var(--mono); font-size: 12px; color: var(--faint);
+    margin: 14px 0 10px;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+}
+
+.memory-list { display: grid; gap: 10px; }
+
+.memory {
+    background: var(--bg);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    padding: 13px 15px;
+}
+.memory[data-scope="PRIVATE"] { border-left: 3px solid var(--recall); }
+.memory[data-scope="GOAL"] { border-left: 3px solid var(--info); }
+
+.memory-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 7px; }
+.memory-content { font-size: 14.5px; line-height: 1.5; }
+.memory-foot {
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+    font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 9px;
+}
+
+.conf { display: inline-flex; align-items: center; gap: 7px; }
+.conf-bar { width: 54px; height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.conf-fill { height: 100%; background: var(--run); }
+.conf-fill[data-low="true"] { background: var(--warn); }
+
+.empty {
+    text-align: center; padding: 34px 20px;
+    color: var(--faint); font-size: 14px;
+    border: 1px dashed var(--line); border-radius: var(--radius-sm);
+}
+.empty strong { display: block; color: var(--muted); margin-bottom: 4px; }
+
+/* -------------------------------------------------------------- toasts --- */
+
+.toasts {
+    position: fixed; z-index: 50;
+    right: 16px; bottom: 16px;
+    display: flex; flex-direction: column; gap: 10px;
+    max-width: min(420px, calc(100vw - 32px));
+}
+.toast {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--info);
+    border-radius: var(--radius-sm);
+    padding: 12px 15px;
+    font-size: 14px;
+    box-shadow: var(--shadow);
+    animation: slide-in 200ms ease;
+}
+.toast[data-kind="error"] { border-left-color: var(--danger); }
+.toast[data-kind="ok"] { border-left-color: var(--run); }
+.toast[data-kind="kill"] { border-left-color: var(--warn); }
+.toast small { display: block; color: var(--faint); margin-top: 3px; font-size: 12.5px; }
+
+.spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid rgb(255 255 255 / 0.25);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 700ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* -------------------------------------------------------- responsive ----- */
+
+@media (max-width: 1080px) {
+    .workspace { grid-template-columns: minmax(0, 1fr); }
+    .panel-timeline { grid-row: auto; }
+    .timeline { height: 380px; }
+}
+
+@media (max-width: 620px) {
+    .hero { padding: 28px 0 24px; }
+    .hero-actions .btn { width: 100%; }
+    .goal-head { gap: 16px; }
+    .stat { flex: 1 1 calc(50% - 5px); min-width: 0; }
+    .agent { flex-wrap: wrap; }
+    .agent-actions { width: 100%; }
+    .agent-actions .btn { flex: 1; }
+    .memory-controls .btn { width: 100%; }
+}
+
+/* Honour a reduced-motion preference: the pulses and slide-ins are decoration,
+   and for some users they are a barrier rather than polish. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+    }
+}

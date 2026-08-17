@@ -1,0 +1,33 @@
+# Caddy obtains and renews a Let's Encrypt certificate for this host on its own,
+# provided the DNS record already points at this machine's Elastic IP before the
+# container starts. If it does not, the ACME challenge fails and Caddy retries
+# with backoff - so set DNS first, then start the stack.
+
+{$NEXUM_PUBLIC_HOST} {
+	encode zstd gzip
+
+	# Server-sent events must not be buffered or the recovery timeline arrives
+	# in one lump after the interesting part is over. flush_interval -1 forwards
+	# each frame as it is written.
+	@events path /api/goals/*/events/stream
+	reverse_proxy @events app:8080 {
+		flush_interval -1
+	}
+
+	reverse_proxy app:8080
+
+	header {
+		# The app serves its own UI and calls only its own origin, so a strict
+		# policy costs nothing here. Inline styles/scripts are permitted because
+		# the dashboard ships as a single self-contained page.
+		Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

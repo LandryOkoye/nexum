@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexum — collective agent memory</title>
+<meta name="description" content="A distributed agent runtime where the goal, not the agent, is the persistent cognitive boundary.">
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230B1220'/><circle cx='50' cy='30' r='10' fill='%2322C55E'/><circle cx='28' cy='70' r='8' fill='%2338BDF8'/><circle cx='72' cy='70' r='8' fill='%2338BDF8'/><path d='M50 40 L28 62 M50 40 L72 62' stroke='%23334155' stroke-width='4'/></svg>">
+</head>
+<body>
+
+<!-- Icon sprite: SVG rather than emoji, so glyphs render identically on every OS. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-kill" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18.36 6.64A9 9 0 1 1 5.64 6.64M12 2v10"/>
+    </symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M7 4.5v15a1 1 0 0 0 1.54.84l11.5-7.5a1 1 0 0 0 0-1.68L8.54 3.66A1 1 0 0 0 7 4.5z"/>
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M12 5v14M5 12h14"/>
+    </symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 5.5a3 3 0 0 0-5.9-.7A3 3 0 0 0 4 10a3 3 0 0 0 1.2 5.4A3 3 0 0 0 12 18.5zM12 5.5a3 3 0 0 1 5.9-.7A3 3 0 0 1 20 10a3 3 0 0 1-1.2 5.4A3 3 0 0 1 12 18.5z"/>
+    </symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 6 9 17l-5-5"/>
+    </symbol>
+    <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M19 12H5M12 19l-7-7 7-7"/>
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>
+    </symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+    </symbol>
+    <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a5 5 0 0 0-4-4.9"/>
+    </symbol>
+    <symbol id="i-task" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/>
+    </symbol>
+    <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="topbar">
+  <a class="brand" href="#/" aria-label="Nexum home">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 100 100">
+        <path d="M50 39 L26 63 M50 39 L74 63"/>
+        <circle cx="50" cy="28" r="11"/><circle cx="26" cy="72" r="9"/><circle cx="74" cy="72" r="9"/>
+      </svg>
+    </span>
+    <span class="brand-text">
+      <strong>NEXUM</strong>
+      <em>the goal remembers</em>
+    </span>
+  </a>
+  <div class="topbar-right">
+    <span id="conn" class="conn" data-state="idle">
+      <span class="conn-dot" aria-hidden="true"></span>
+      <span id="conn-label">idle</span>
+    </span>
+  </div>
+</header>
+
+<main id="view"></main>
+
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+<!-- ------------------------------------------------------------- missions -->
+<template id="tpl-goals">
+  <section class="wrap">
+    <div class="hero">
+      <h1>Agents are disposable.<br><span class="hero-accent">Goals persist.</span></h1>
+      <p class="hero-sub">
+        Nexum makes the <strong>goal</strong> — not the agent — the persistent cognitive
+        boundary. Agents join a mission, contribute to shared memory, can die, and get
+        replaced. The mission keeps everything the collective learned.
+      </p>
+      <div class="hero-actions">
+        <button class="btn btn-primary btn-lg" data-act="seed">
+          <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>
+          Seed a demo mission
+        </button>
+        <button class="btn btn-ghost btn-lg" data-act="new-goal">Create empty goal</button>
+      </div>
+    </div>
+
+    <form class="card newgoal" id="newgoal" hidden>
+      <h2>New goal</h2>
+      <div class="field">
+        <label for="g-title">Title</label>
+        <input id="g-title" name="title" required maxlength="200"
+               placeholder="Analyse competitors in African fintech">
+      </div>
+      <div class="field">
+        <label for="g-desc">Description</label>
+        <textarea id="g-desc" name="description" rows="3"
+                  placeholder="What should the collective find out?"></textarea>
+      </div>
+      <div class="row-end">
+        <button type="button" class="btn btn-ghost" data-act="cancel-goal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create goal</button>
+      </div>
+    </form>
+
+    <h2 class="section-title">Missions</h2>
+    <div id="goal-list" class="goal-grid"></div>
+  </section>
+</template>
+
+<!-- ---------------------------------------------------------- goal detail -->
+<template id="tpl-goal">
+  <section class="wrap wide">
+    <a class="backlink" href="#/"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg> All missions</a>
+
+    <div class="goal-head">
+      <div class="goal-head-main">
+        <h1 id="goal-title">&nbsp;</h1>
+        <p id="goal-desc" class="goal-desc"></p>
+      </div>
+      <div class="stat-strip" id="goal-stats"></div>
+    </div>
+
+    <div id="recovery" class="recovery" hidden>
+      <div class="recovery-head">
+        <span class="pulse-dot" aria-hidden="true"></span>
+        <h2 id="recovery-title">Failure detected — recovering</h2>
+      </div>
+      <p class="recovery-lede">
+        Nothing told the system an agent died. Its lease simply stopped being renewed,
+        and the reaper worked the rest out on its own.
+      </p>
+      <ol class="recovery-steps" id="recovery-steps"></ol>
+    </div>
+
+    <div class="workspace">
+      <section class="panel" aria-labelledby="h-agents">
+        <div class="panel-head">
+          <h2 id="h-agents"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg> Agents</h2>
+          <button class="btn btn-sm btn-ghost" data-act="add-agent">Add agent</button>
+        </div>
+        <div id="agent-list" class="agent-list"></div>
+      </section>
+
+      <section class="panel panel-timeline" aria-labelledby="h-timeline">
+        <div class="panel-head">
+          <h2 id="h-timeline"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> Live timeline</h2>
+          <label class="toggle">
+            <input type="checkbox" id="follow" checked>
+            <span>Follow</span>
+          </label>
+        </div>
+        <ol id="timeline" class="timeline"></ol>
+      </section>
+
+      <section class="panel" aria-labelledby="h-tasks">
+        <div class="panel-head">
+          <h2 id="h-tasks"><svg class="icon" aria-hidden="true"><use href="#i-task"/></svg> Tasks</h2>
+          <button class="btn btn-sm btn-ghost" data-act="add-task">Add task</button>
+        </div>
+        <div id="task-list" class="task-list"></div>
+      </section>
+
+      <section class="panel panel-memory" aria-labelledby="h-memory">
+        <div class="panel-head">
+          <h2 id="h-memory"><svg class="icon" aria-hidden="true"><use href="#i-brain"/></svg> Collective memory</h2>
+        </div>
+        <p class="panel-lede">
+          Every query runs through the same access policy the agents use. Change who is
+          asking and the answer changes — that is the isolation guarantee, not a claim
+          about it.
+        </p>
+        <form class="memory-controls" id="memory-form">
+          <div class="field">
+            <label for="as-agent">Viewing as</label>
+            <select id="as-agent"></select>
+          </div>
+          <div class="field field-grow">
+            <label for="mem-q">Query</label>
+            <input id="mem-q" placeholder="transaction pricing" autocomplete="off">
+          </div>
+          <button class="btn btn-primary" type="submit">
+            <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+            Recall
+          </button>
+        </form>
+        <div id="memory-meta" class="memory-meta"></div>
+        <div id="memory-list" class="memory-list"></div>
+      </section>
+    </div>
+  </section>
+</template>
+
+<script src="/app.js"></script>
+</body>
+</html>

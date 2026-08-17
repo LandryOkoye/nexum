@@ -20,6 +20,10 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+	// Health endpoint for the container healthcheck and the load balancer.
+	// Without it a deployed container has no way to say "the database is gone"
+	// short of failing a real request.
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
 	// CockroachDB speaks the PostgreSQL wire protocol: Postgres driver +
 	// Flyway's Postgres module. Hibernate dialect is set in application.yaml.
@@ -53,4 +57,21 @@ dependencyManagement {
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+// The UI source lives in frontend/ - where a frontend belongs, and where the
+// repo layout says it is - but ships inside the backend jar. Folding it into
+// processResources keeps both properties: one deployable artifact, one origin
+// (so no CORS), and no node toolchain anywhere in the build.
+//
+// Done here rather than as a separate Copy task on purpose: a second task
+// writing into processResources' output directory gives Gradle two producers
+// for one location, which it rejects as an undeclared dependency - correctly,
+// since the execution order would otherwise be undefined.
+//
+// The UI is plain HTML/CSS/JS precisely so this can be a copy, not a build.
+tasks.named('processResources') {
+	from(rootProject.file('frontend')) {
+		into 'static'
+	}
 }

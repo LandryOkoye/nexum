@@ -1,0 +1,77 @@
+# Deployed stack: the control plane behind Caddy. Nothing else.
+#
+#   docker compose -f compose.prod.yaml up -d --build
+#
+# Note what is NOT here. CockroachDB is CockroachDB Cloud - the managed product
+# is the one being demonstrated, and running a node beside the JVM on a 2GB
+# instance would starve both. Ollama is absent because embeddings come from
+# Bedrock in every environment.
+#
+# Configuration comes from a .env file beside this one, which is gitignored:
+#
+#   NEXUM_DB_URL=jdbc:postgresql://<cluster-host>:26257/nexum?sslmode=verify-full
+#   NEXUM_DB_USERNAME=...
+#   NEXUM_DB_PASSWORD=...
+#   GROQ_API_KEY=...
+#   AWS_REGION=us-east-1
+#   NEXUM_S3_BUCKET=...
+#   NEXUM_PUBLIC_HOST=nexum.example.org
+#
+# Deliberately absent from that list: AWS_ACCESS_KEY_ID and
+# AWS_SECRET_ACCESS_KEY. On EC2 they must stay unset so the SDK's default
+# credential chain reaches the instance role. Setting them - even to empty
+# strings - shadows the role and breaks Bedrock on the deployed box while
+# working perfectly on a laptop, which is a miserable thing to debug remotely.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: nexum-backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      NEXUM_DB_URL: ${NEXUM_DB_URL}
+      NEXUM_DB_USERNAME: ${NEXUM_DB_USERNAME}
+      NEXUM_DB_PASSWORD: ${NEXUM_DB_PASSWORD}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      NEXUM_GROQ_MODEL: ${NEXUM_GROQ_MODEL:-openai/gpt-oss-120b}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      NEXUM_S3_BUCKET: ${NEXUM_S3_BUCKET:-}
+    # Bounded so the JVM and Caddy cannot between them exhaust a t3.small and
+    # take the demo down. MaxRAMPercentage in the Dockerfile is relative to this.
+    mem_limit: 1400m
+    expose:
+      - '8080'
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider',
+             'http://localhost:8080/actuator/health']
+      interval: 15s
+      timeout: 5s
+      start_period: 90s
+      retries: 3
+
+  # Terminates TLS and obtains a Let's Encrypt certificate automatically.
+  # Judges opening the demo URL get a padlock rather than a browser warning,
+  # which costs about fifteen minutes and buys a lot of credibility.
+  caddy:
+    image: 'caddy:2-alpine'
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      NEXUM_PUBLIC_HOST: ${NEXUM_PUBLIC_HOST}
+    volumes:
+      - ./infra/aws/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates must outlive the container. Let's Encrypt rate-limits
+      # issuance per domain per week, so a volume-less Caddy that re-requests on
+      # every restart will lock you out at the worst possible moment.
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

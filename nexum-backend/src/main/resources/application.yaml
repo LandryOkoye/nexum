@@ -89,6 +89,17 @@ nexum:
     # Changing this means re-embedding everything and rebuilding the index.
     dimensions: 1024
 
+management:
+  endpoints:
+    web:
+      exposure:
+        # Health only. The other endpoints expose configuration, environment,
+        # and bean wiring, none of which belongs on a public demo URL.
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
 logging:
   level:
     com.nexum: DEBUG
