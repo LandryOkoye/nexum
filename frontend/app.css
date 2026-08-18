@@ -1,704 +1,750 @@
-/* Nexum control-plane UI.
+/* Nexum — control plane UI.
  *
- * Dark by intent, not fashion: this is an operations console that will be shown
- * on a projector and recorded, where a bright surface blows out and status
- * colour is the first thing a viewer reads.
+ * Design register: instrument panel, not landing page. The subject is a
+ * distributed system failing and recovering, and the interface should read like
+ * something you would trust to tell you the truth about that. Practically:
  *
- * Fonts are system stacks rather than a webfont import. The deployed app runs
- * under a strict `default-src 'self'` policy and is meant to be self-contained -
- * a demo should not depend on Google's CDN being reachable when it matters.
+ *   - Colour carries state and nothing else. Nothing is coloured to be pretty,
+ *     so a green dot always means "leased and alive" rather than "decorative".
+ *   - One accent. Everything else is a neutral step.
+ *   - A real type scale with assigned roles, so hierarchy comes from size and
+ *     weight rather than from boxes drawn around things.
+ *   - Density over whitespace. This is for someone reading a running system.
  */
 
+/* ------------------------------------------------------------- tokens ----- */
+
 :root {
-    /* Surfaces: "code dark", deepening toward the page background. */
-    --bg: #080D18;
-    --surface: #0F172A;
-    --surface-2: #17223B;
-    --surface-3: #1E293B;
-    --line: #253352;
-    --line-soft: #1B2740;
+    /* Neutral, very slightly cool. Pure black crushes the surface layers. */
+    --bg: #0A0B0D;
+    --surface-1: #101114;
+    --surface-2: #16181C;
+    --surface-3: #1D2025;
 
-    --text: #F8FAFC;
-    --muted: #94A3B8;
-    --faint: #64748B;
+    --border: #26292F;
+    --border-strong: #343840;
 
-    /* Status. Green means a worker is alive and holding its lease. */
-    --run: #22C55E;
-    --run-dim: #16653A;
-    --warn: #F59E0B;
-    --danger: #EF4444;
-    --info: #38BDF8;
-    --recall: #A78BFA;
+    --text: #E8EAED;
+    --text-2: #9AA0A8;
+    --text-3: #6B717A;
 
-    --radius: 12px;
-    --radius-sm: 8px;
-    --gap: 20px;
+    /* The single accent. Used for interaction, never for status. */
+    --accent: #4F8DF7;
+    --accent-dim: #1E3A6B;
 
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.28);
+    /* Status. Each of these means exactly one thing, everywhere. */
+    --run: #3FB950;      /* leased, heartbeat current */
+    --warn: #D29922;     /* orphaned, degraded, unembedded */
+    --danger: #F85149;   /* dead, killed, failed */
+    --recall: #A371F7;   /* memory and retrieval */
+
+    --t-xs: 11px;
+    --t-sm: 12px;
+    --t-base: 13px;
+    --t-md: 15px;
+    --t-lg: 18px;
+    --t-xl: 24px;
+    --t-2xl: 34px;
+
+    --r-sm: 4px;
+    --r: 6px;
+    --r-lg: 10px;
 
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo,
-            Consolas, "Liberation Mono", monospace;
+        Consolas, monospace;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-            sans-serif;
+        sans-serif;
+
+    --topbar-h: 48px;
 }
+
+/* ------------------------------------------------------------- base ------- */
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
-
 body {
     margin: 0;
-    background:
-        radial-gradient(1100px 620px at 78% -10%, #14213F 0%, transparent 60%),
-        radial-gradient(900px 520px at 8% 0%, #10203A 0%, transparent 55%),
-        var(--bg);
-    background-attachment: fixed;
+    background: var(--bg);
     color: var(--text);
-    font-family: var(--sans);
-    /* 16px floor: smaller body text on a phone triggers iOS zoom-on-focus. */
-    font-size: 16px;
-    line-height: 1.55;
-    min-height: 100vh;
+    font: var(--t-base)/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
 }
 
-h1, h2, h3 { line-height: 1.2; margin: 0; letter-spacing: -0.01em; }
+h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.011em; }
+p { margin: 0; }
 
-/* Keyboard focus must always be visible, including on custom controls. */
+a { color: inherit; text-decoration: none; }
+
+code, pre, .mono { font-family: var(--mono); font-variant-ligatures: none; }
+
 :focus-visible {
-    outline: 2px solid var(--info);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: var(--r-sm);
 }
 
-.icon { width: 16px; height: 16px; flex: none; }
+::selection { background: var(--accent-dim); color: var(--text); }
 
-/* ------------------------------------------------------------- top bar --- */
+/* Scrollbars, so the panels do not each render a different browser default. */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+    background: var(--border-strong); border-radius: 4px;
+    border: 2px solid transparent; background-clip: padding-box;
+}
+
+.icon { width: 14px; height: 14px; flex: none; }
+
+/* Section label: the small uppercase key that names a region. Deliberately
+   quiet — it should be findable, not read. */
+.eyebrow {
+    font: 600 var(--t-xs)/1 var(--sans);
+    letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-3);
+}
+
+/* ------------------------------------------------------------ topbar ------ */
 
 .topbar {
-    position: sticky;
-    top: 0;
-    z-index: 30;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 12px clamp(16px, 4vw, 40px);
-    background: rgb(8 13 24 / 0.86);
+    position: sticky; top: 0; z-index: 40;
+    height: var(--topbar-h);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 0 16px;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
     backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--line-soft);
+    border-bottom: 1px solid var(--border);
 }
 
-.brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    text-decoration: none;
-    color: inherit;
-}
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
 .brand-mark svg {
-    width: 30px; height: 30px;
-    fill: none;
-    stroke: var(--line);
-    stroke-width: 5;
+    width: 22px; height: 22px; display: block;
+    fill: none; stroke: var(--text-2); stroke-width: 6;
 }
-.brand-mark circle:first-of-type { fill: var(--run); stroke: none; }
-.brand-mark circle { fill: var(--info); stroke: none; }
+.brand-mark circle { fill: var(--bg); }
+.brand:hover .brand-mark svg { stroke: var(--accent); }
 
-.brand-text { display: flex; flex-direction: column; line-height: 1.1; }
-.brand-text strong { font-family: var(--mono); font-size: 17px; letter-spacing: 0.14em; }
-.brand-text em { font-style: normal; font-size: 11px; color: var(--faint); letter-spacing: 0.04em; }
+.brand-text { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.brand-text strong {
+    font: 600 var(--t-base)/1 var(--sans); letter-spacing: 0.14em;
+}
+.brand-text em {
+    font-style: normal; font-size: var(--t-xs); color: var(--text-3);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.topbar-right { display: flex; align-items: center; gap: 10px; }
 
 .conn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--muted);
-    padding: 6px 12px;
-    border: 1px solid var(--line-soft);
-    border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 6px;
+    font: 500 var(--t-xs)/1 var(--mono);
+    color: var(--text-3);
+    padding: 5px 9px; border: 1px solid var(--border); border-radius: 999px;
 }
-.conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
-.conn[data-state="live"] .conn-dot { background: var(--run); animation: pulse 2s ease-in-out infinite; }
-.conn[data-state="live"] { color: var(--run); border-color: var(--run-dim); }
+.conn-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex: none;
+}
+.conn[data-state="live"] { color: var(--run); border-color: color-mix(in srgb, var(--run) 32%, transparent); }
+.conn[data-state="live"] .conn-dot { background: var(--run); animation: breathe 2.4s ease-in-out infinite; }
+.conn[data-state="down"] { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 32%, transparent); }
 .conn[data-state="down"] .conn-dot { background: var(--danger); }
-.conn[data-state="down"] { color: var(--danger); }
 
-@keyframes pulse {
-    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgb(34 197 94 / 0.5); }
-    50% { opacity: 0.75; box-shadow: 0 0 0 6px rgb(34 197 94 / 0); }
-}
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-/* ------------------------------------------------------------- layout ---- */
+/* ------------------------------------------------------------ layout ------ */
 
-.wrap {
-    width: min(100% - 32px, 1180px);
-    margin: 0 auto;
-    padding: 32px 0 80px;
-}
-.wrap.wide { width: min(100% - 32px, 1560px); }
-
-.backlink {
-    display: inline-flex; align-items: center; gap: 8px;
-    color: var(--muted); text-decoration: none;
-    font-size: 14px; margin-bottom: 20px;
-    transition: color 200ms ease;
-}
-.backlink:hover { color: var(--text); }
-
-/* --------------------------------------------------------------- hero ---- */
-
-.hero { padding: 48px 0 40px; max-width: 780px; }
-.hero h1 { font-size: clamp(34px, 6vw, 60px); font-weight: 800; letter-spacing: -0.03em; }
-.hero-accent {
-    background: linear-gradient(96deg, var(--run), var(--info));
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-.hero-sub {
-    margin: 20px 0 0;
-    color: var(--muted);
-    font-size: 17px;
-    /* Comfortable measure; long lines are hard to track back from. */
-    max-width: 62ch;
-}
-.hero-sub strong { color: var(--text); font-weight: 600; }
-.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 64px; }
+.wrap.wide { max-width: 1600px; }
 
 .section-title {
-    font-size: 13px; text-transform: uppercase; letter-spacing: 0.14em;
-    color: var(--faint); font-family: var(--mono); font-weight: 600;
-    margin: 40px 0 16px;
+    font-size: var(--t-md); margin: 28px 0 12px;
+    display: flex; align-items: center; gap: 10px;
 }
 
-/* ------------------------------------------------------------- buttons --- */
+/* ------------------------------------------------------------ buttons ----- */
 
 .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    /* 44px minimum height: anything smaller is a miss on touch. */
-    min-height: 44px;
-    padding: 10px 18px;
-    font-family: var(--sans); font-size: 14px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    font: 500 var(--t-base)/1 var(--sans);
     color: var(--text);
     background: var(--surface-3);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: background 200ms ease, border-color 200ms ease, color 200ms ease;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    padding: 0 12px; height: 32px; min-width: 0;
+    cursor: pointer; white-space: nowrap;
+    transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
 }
-.btn:hover:not(:disabled) { background: #26365C; border-color: #3B5280; }
+.btn:hover:not(:disabled) { background: color-mix(in srgb, var(--surface-3) 70%, var(--text) 6%); }
+.btn:active:not(:disabled) { transform: translateY(0.5px); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-.btn-primary { background: var(--run); border-color: var(--run); color: #04220F; }
-.btn-primary:hover:not(:disabled) { background: #34D96C; border-color: #34D96C; }
+.btn-primary {
+    background: var(--accent); border-color: var(--accent); color: #0A0B0D; font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, #fff 12%); }
 
-.btn-ghost { background: transparent; }
-.btn-ghost:hover:not(:disabled) { background: var(--surface-3); }
+.btn-ghost { background: transparent; border-color: var(--border); color: var(--text-2); }
+.btn-ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
 
-.btn-danger { background: transparent; border-color: #6B2020; color: #FCA5A5; }
-.btn-danger:hover:not(:disabled) { background: var(--danger); border-color: var(--danger); color: #2A0505; }
-
-.btn-lg { min-height: 52px; padding: 14px 26px; font-size: 15px; }
-.btn-sm { min-height: 36px; padding: 6px 12px; font-size: 13px; }
-
-/* --------------------------------------------------------------- cards --- */
-
-.card {
-    background: linear-gradient(180deg, var(--surface-2), var(--surface));
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius);
-    padding: 22px;
-    box-shadow: var(--shadow);
+/* The kill button is the one destructive control in the product and the single
+   most important thing in the demo. It reads as dangerous before it is pressed. */
+.btn-danger {
+    background: transparent; color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 38%, transparent);
+}
+.btn-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    border-color: var(--danger);
 }
 
-.newgoal { max-width: 620px; margin-bottom: 12px; }
-.newgoal h2 { font-size: 18px; margin-bottom: 16px; }
+.btn-sm { height: 26px; padding: 0 9px; font-size: var(--t-sm); }
+.btn-lg { height: 40px; padding: 0 18px; font-size: var(--t-md); }
 
-.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
-.field-grow { flex: 1 1 220px; }
-label { font-size: 13px; color: var(--muted); font-weight: 500; }
+/* ------------------------------------------------------------- forms ------ */
+
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field label { font: 500 var(--t-xs)/1 var(--sans); color: var(--text-3); letter-spacing: 0.02em; }
+.field-grow { flex: 1; }
 
 input, textarea, select {
-    font-family: var(--sans);
-    font-size: 15px;
+    font: var(--t-base)/1.4 var(--sans);
     color: var(--text);
-    background: var(--bg);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-sm);
-    padding: 11px 13px;
-    min-height: 44px;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 8px 10px;
     width: 100%;
-    transition: border-color 200ms ease;
+    transition: border-color 120ms ease;
 }
-input:hover, textarea:hover, select:hover { border-color: #3B5280; }
-input::placeholder, textarea::placeholder { color: var(--faint); }
-textarea { resize: vertical; min-height: 76px; }
-select { cursor: pointer; }
+input:hover, textarea:hover, select:hover { border-color: var(--border-strong); }
+input:focus, textarea:focus, select:focus {
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+textarea { resize: vertical; min-height: 64px; }
+select { appearance: none; padding-right: 28px;
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%),
+        linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+    background-position: calc(100% - 15px) 15px, calc(100% - 11px) 15px;
+    background-size: 4px 4px, 4px 4px; background-repeat: no-repeat;
+}
 
-.row-end { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
+.row-end { display: flex; justify-content: flex-end; gap: 8px; }
 
-/* --------------------------------------------------------- goal cards ---- */
+.toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: var(--t-xs); color: var(--text-3); cursor: pointer;
+}
+.toggle input { width: auto; margin: 0; accent-color: var(--accent); }
+
+/* -------------------------------------------------------------- pills ----- */
+
+.pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    font: 500 var(--t-xs)/1 var(--mono);
+    padding: 3px 7px; border-radius: var(--r-sm);
+    border: 1px solid transparent; white-space: nowrap;
+}
+.pill-run    { color: var(--run);    background: color-mix(in srgb, var(--run) 12%, transparent);    border-color: color-mix(in srgb, var(--run) 26%, transparent); }
+.pill-idle   { color: var(--text-3); background: var(--surface-3); border-color: var(--border); }
+.pill-dead   { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 26%, transparent); }
+.pill-orphan { color: var(--warn);   background: color-mix(in srgb, var(--warn) 12%, transparent);   border-color: color-mix(in srgb, var(--warn) 26%, transparent); }
+.pill-done   { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 26%, transparent); }
+.pill-out    { color: var(--recall); background: color-mix(in srgb, var(--recall) 12%, transparent); border-color: color-mix(in srgb, var(--recall) 26%, transparent); }
+
+/* ------------------------------------------------------------- missions --- */
+
+.hero { padding: 56px 0 40px; max-width: 60ch; }
+.hero h1 {
+    font-size: var(--t-2xl); line-height: 1.15; letter-spacing: -0.025em;
+    margin-bottom: 16px;
+}
+.hero-accent { color: var(--text-3); }
+.hero-sub { color: var(--text-2); font-size: var(--t-md); line-height: 1.6; }
+.hero-sub strong { color: var(--text); font-weight: 600; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+
+.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: var(--r-lg); padding: 20px;
+}
+.newgoal { max-width: 560px; display: grid; gap: 14px; }
+.newgoal h2 { font-size: var(--t-md); }
 
 .goal-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
-    gap: var(--gap);
+    display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
 
 .goal-card {
-    display: block;
-    text-align: left;
-    text-decoration: none;
-    color: inherit;
-    background: linear-gradient(180deg, var(--surface-2), var(--surface));
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius);
-    padding: 20px;
-    cursor: pointer;
-    /* Colour/border transitions only - a scale on hover nudges neighbouring
-       cards and makes a grid feel unstable. */
-    transition: border-color 200ms ease, background 200ms ease;
+    display: block; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: var(--r-lg);
+    padding: 16px; transition: border-color 120ms ease, background 120ms ease;
 }
-.goal-card:hover { border-color: #3B5280; background: linear-gradient(180deg, #1B2946, var(--surface-2)); }
-.goal-card h3 { font-size: 17px; margin-bottom: 8px; }
+.goal-card:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.goal-card h3 { font-size: var(--t-base); margin-bottom: 6px; }
 .goal-card p {
-    color: var(--muted); font-size: 14px; margin: 0 0 16px;
-    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
-    -webkit-box-orient: vertical; overflow: hidden;
+    color: var(--text-3); font-size: var(--t-sm); margin-bottom: 14px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
-.mini-stats { display: flex; flex-wrap: wrap; gap: 14px; font-family: var(--mono); font-size: 12px; color: var(--faint); }
-.mini-stats b { color: var(--text); font-weight: 600; }
+.mini-stats { display: flex; gap: 14px; font: var(--t-xs)/1 var(--mono); color: var(--text-3); }
+.mini-stats b { color: var(--text-2); font-weight: 600; }
 
-/* --------------------------------------------------------- goal header --- */
+/* --------------------------------------------------------- goal header ---- */
+
+.backlink {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: var(--t-sm); color: var(--text-3); margin-bottom: 16px;
+}
+.backlink:hover { color: var(--text); }
 
 .goal-head {
-    display: flex; flex-wrap: wrap; gap: 24px;
-    align-items: flex-start; justify-content: space-between;
-    margin-bottom: 24px;
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 24px; flex-wrap: wrap; padding-bottom: 20px;
+    border-bottom: 1px solid var(--border); margin-bottom: 20px;
 }
-.goal-head-main { flex: 1 1 420px; min-width: 0; }
-.goal-head h1 { font-size: clamp(22px, 3vw, 30px); font-weight: 700; }
-.goal-desc { color: var(--muted); font-size: 15px; margin: 8px 0 0; max-width: 72ch; }
+.goal-head-main { min-width: 0; flex: 1 1 420px; }
+.goal-head h1 { font-size: var(--t-xl); letter-spacing: -0.02em; }
+.goal-desc { color: var(--text-2); margin-top: 8px; max-width: 78ch; font-size: var(--t-base); }
 
-.stat-strip { display: flex; flex-wrap: wrap; gap: 10px; }
+.stat-strip { display: flex; gap: 8px; flex-wrap: wrap; }
 .stat {
-    background: var(--surface);
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius-sm);
-    padding: 10px 16px;
-    min-width: 92px;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 8px 14px; min-width: 78px;
 }
-.stat span { display: block; font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.1em; }
-.stat b { font-family: var(--mono); font-size: 21px; font-weight: 600; }
+.stat span { display: block; font-size: var(--t-xs); color: var(--text-3); margin-bottom: 3px; }
+.stat b { font: 600 var(--t-lg)/1 var(--mono); letter-spacing: -0.02em; }
 
-/* ------------------------------------------------------------ recovery --- */
+/* ------------------------------------------------------------ workspace --- */
 
-/* The centrepiece. When a worker dies this appears and fills in step by step,
-   so the sequence is legible to someone watching for the first time. */
-.recovery {
-    border: 1px solid #6B4A12;
-    background: linear-gradient(180deg, #241B08, #14100A);
-    border-radius: var(--radius);
-    padding: 22px;
-    margin-bottom: 26px;
-}
-.recovery[data-done="true"] { border-color: var(--run-dim); background: linear-gradient(180deg, #0C2418, #0A1712); }
-
-.recovery-head { display: flex; align-items: center; gap: 12px; }
-.recovery-head h2 { font-size: 17px; }
-.pulse-dot {
-    width: 11px; height: 11px; border-radius: 50%;
-    background: var(--warn);
-    animation: pulse-warn 1.4s ease-in-out infinite;
-}
-.recovery[data-done="true"] .pulse-dot { background: var(--run); animation: none; }
-@keyframes pulse-warn {
-    0%, 100% { box-shadow: 0 0 0 0 rgb(245 158 11 / 0.55); }
-    60% { box-shadow: 0 0 0 9px rgb(245 158 11 / 0); }
-}
-
-.recovery-lede { color: var(--muted); font-size: 14px; margin: 10px 0 18px; max-width: 74ch; }
-
-.recovery-steps {
-    list-style: none; margin: 0; padding: 0;
-    display: grid; gap: 10px;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-    counter-reset: step;
-}
-.recovery-steps li {
-    display: flex; align-items: flex-start; gap: 10px;
-    background: rgb(0 0 0 / 0.28);
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius-sm);
-    padding: 12px;
-    font-size: 13px;
-    color: var(--faint);
-    transition: color 250ms ease, border-color 250ms ease;
-}
-.recovery-steps li[data-hit="true"] { color: var(--text); border-color: var(--run-dim); }
-.step-num {
-    flex: none;
-    width: 22px; height: 22px; border-radius: 50%;
-    display: grid; place-items: center;
-    background: var(--surface-3); color: var(--faint);
-    font-family: var(--mono); font-size: 11px; font-weight: 700;
-}
-.recovery-steps li[data-hit="true"] .step-num { background: var(--run); color: #04220F; }
-.step-body strong { display: block; font-size: 13px; font-weight: 600; }
-.step-body time { font-family: var(--mono); font-size: 11px; color: var(--faint); }
-
-/* ----------------------------------------------------------- workspace --- */
-
+/* Three columns: who is working, what is happening, what is known. Reading
+   order matches the causal order, so the eye tracks left to right as an agent
+   searches, records, and the memory panel gains a row. */
 .workspace {
-    display: grid;
-    gap: var(--gap);
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    display: grid; gap: 12px;
+    grid-template-columns: 320px minmax(0, 1fr) 400px;
+    align-items: start;
 }
-/* The timeline spans both rows on the right: it is the tallest thing on the
-   page and the thing a viewer watches during the recovery sequence. */
-.panel-timeline { grid-row: span 2; }
-.panel-memory { grid-column: 1 / -1; }
 
 .panel {
-    background: linear-gradient(180deg, var(--surface-2), var(--surface));
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius);
-    padding: 18px;
-    min-width: 0;
-    box-shadow: var(--shadow);
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: var(--r-lg); overflow: hidden;
 }
+
 .panel-head {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; margin-bottom: 14px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 11px 14px; border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
 }
 .panel-head h2 {
-    display: flex; align-items: center; gap: 9px;
-    font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em;
-    font-family: var(--mono); font-weight: 600; color: var(--muted);
+    display: flex; align-items: center; gap: 7px;
+    font: 600 var(--t-xs)/1 var(--sans);
+    letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-2);
 }
-.panel-lede { color: var(--faint); font-size: 13px; margin: -4px 0 14px; max-width: 78ch; }
+.panel-head .icon { color: var(--text-3); }
 
-.toggle { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); cursor: pointer; }
-.toggle input { width: auto; min-height: 0; accent-color: var(--run); cursor: pointer; }
+.panel-body { padding: 12px 14px; }
+.panel-lede {
+    color: var(--text-3); font-size: var(--t-sm); line-height: 1.55;
+    padding: 12px 14px 0; max-width: 72ch;
+}
 
-/* -------------------------------------------------------------- agents --- */
+.col { display: grid; gap: 12px; align-content: start; }
 
-.agent-list { display: grid; gap: 12px; }
+/* -------------------------------------------------------------- agents ---- */
+
+.agent-list { display: grid; gap: 1px; background: var(--border); }
 
 .agent {
-    display: flex; align-items: center; gap: 14px;
-    background: var(--bg);
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius-sm);
-    padding: 13px 15px;
-    transition: border-color 250ms ease;
+    display: grid; gap: 10px; padding: 12px 14px;
+    background: var(--surface-1);
+    transition: background 120ms ease;
 }
-.agent[data-live="true"] { border-color: var(--run-dim); }
-.agent[data-dead="true"] { border-color: #4B1D1D; opacity: 0.72; }
+.agent:hover { background: var(--surface-2); }
+.agent[data-live="true"] { background: color-mix(in srgb, var(--run) 4%, var(--surface-1)); }
+
+.agent-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
 .avatar {
-    flex: none;
-    width: 40px; height: 40px; border-radius: 10px;
+    width: 28px; height: 28px; border-radius: var(--r); flex: none;
     display: grid; place-items: center;
-    font-family: var(--mono); font-weight: 700; font-size: 15px;
-    background: var(--surface-3); color: var(--info);
-    border: 1px solid var(--line);
+    font: 600 var(--t-xs)/1 var(--mono);
+    background: var(--surface-3); color: var(--text-2);
+    border: 1px solid var(--border-strong);
 }
-.agent[data-live="true"] .avatar { color: var(--run); border-color: var(--run-dim); }
-.agent[data-dead="true"] .avatar { color: var(--danger); border-color: #4B1D1D; }
-
-.agent-main { flex: 1; min-width: 0; }
-.agent-name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
-.agent-meta { font-family: var(--mono); font-size: 11.5px; color: var(--faint); margin-top: 3px; }
-.agent-actions { display: flex; gap: 8px; flex: none; }
-
-/* --------------------------------------------------------------- pills --- */
-
-.pill {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-family: var(--mono); font-size: 10.5px; font-weight: 600;
-    letter-spacing: 0.06em;
-    padding: 3px 8px; border-radius: 999px;
-    border: 1px solid currentColor;
-    text-transform: uppercase;
-    white-space: nowrap;
+.agent[data-live="true"] .avatar {
+    border-color: color-mix(in srgb, var(--run) 45%, transparent); color: var(--run);
 }
-/* Colour is never the only signal - every pill also carries its label. */
-.pill-run { color: var(--run); background: rgb(34 197 94 / 0.09); }
-.pill-idle { color: var(--faint); background: rgb(100 116 139 / 0.09); }
-.pill-dead { color: var(--danger); background: rgb(239 68 68 / 0.09); }
-.pill-orphan { color: var(--warn); background: rgb(245 158 11 / 0.09); }
-.pill-done { color: var(--info); background: rgb(56 189 248 / 0.09); }
-.pill-out { color: var(--recall); background: rgb(167 139 250 / 0.09); }
 
-/* --------------------------------------------------------------- tasks --- */
+.agent-name {
+    font-weight: 600; font-size: var(--t-base); min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.agent-role { font-size: var(--t-xs); color: var(--text-3); }
+.agent-meta {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font: var(--t-xs)/1 var(--mono); color: var(--text-3);
+}
+.agent-actions { display: flex; gap: 6px; }
+.agent-actions .btn { flex: 1; }
 
-.task-list { display: grid; gap: 10px; }
+/* What the agent is doing right now — the part the old UI hid entirely. */
+.agent-work {
+    display: grid; gap: 6px;
+    padding: 9px 10px; border-radius: var(--r);
+    background: var(--surface-2); border: 1px solid var(--border);
+    font-size: var(--t-xs);
+}
+.agent-work-top {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    color: var(--text-3); font-family: var(--mono);
+}
+.agent-work-task {
+    color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.agent-work-action { color: var(--text); font-weight: 500; }
 
-.task {
-    background: var(--bg);
-    border: 1px solid var(--line-soft);
-    border-left: 3px solid var(--line);
-    border-radius: var(--radius-sm);
+/* Step progress. A bar rather than "3/8" alone: the bound on autonomy is a
+   design position, and it should be visible that there is one. */
+.steps { display: flex; gap: 2px; }
+.step-tick { height: 3px; flex: 1; border-radius: 2px; background: var(--surface-3); }
+.step-tick[data-done="true"] { background: var(--run); }
+
+/* Lease countdown. Turns amber as it approaches expiry, which is what makes a
+   killed agent legible: the number stops being refreshed and visibly runs out. */
+.lease { font-family: var(--mono); }
+.lease[data-state="ok"] { color: var(--run); }
+.lease[data-state="expiring"] { color: var(--warn); }
+.lease[data-state="lapsed"] { color: var(--danger); }
+
+/* ------------------------------------------------------------ activity ---- */
+
+.panel-activity .panel-body { padding: 0; }
+
+.activity {
+    list-style: none; margin: 0; padding: 6px 0;
+    height: 620px; overflow-y: auto;
+}
+
+.act {
+    display: grid; grid-template-columns: 58px 1fr; gap: 10px;
+    padding: 7px 14px;
+    border-left: 2px solid transparent;
+}
+.act:hover { background: var(--surface-2); }
+.act-time { font: var(--t-xs)/1.6 var(--mono); color: var(--text-3); }
+.act-body { min-width: 0; }
+
+.act-head {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    font-size: var(--t-sm);
+}
+.act-who { font-weight: 600; color: var(--text); }
+.act-what {
+    font: 500 var(--t-xs)/1 var(--mono); letter-spacing: 0.03em;
+    text-transform: uppercase; color: var(--text-3);
+}
+.act-detail { color: var(--text-2); font-size: var(--t-sm); margin-top: 2px; word-break: break-word; }
+
+/* Status accents on the rail, so scanning the left edge tells the story
+   without reading a word of it. */
+.act[data-kind="run"]    { border-left-color: color-mix(in srgb, var(--run) 55%, transparent); }
+.act[data-kind="kill"]   { border-left-color: var(--danger); }
+.act[data-kind="orphan"] { border-left-color: var(--warn); }
+.act[data-kind="memory"] { border-left-color: color-mix(in srgb, var(--recall) 55%, transparent); }
+.act[data-kind="done"]   { border-left-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+
+/* Sources an agent actually read. Links, because a finding a reader cannot
+   check is a finding they have to take on faith. */
+.act-sources { display: grid; gap: 3px; margin-top: 6px; }
+.act-source {
+    display: flex; align-items: baseline; gap: 7px;
+    font-size: var(--t-xs); color: var(--text-3); min-width: 0;
+}
+.act-source code { color: var(--text-3); flex: none; }
+.act-source a {
+    color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.act-source a:hover { text-decoration: underline; }
+.act-source span {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2);
+}
+
+.act-query {
+    font-family: var(--mono); font-size: var(--t-xs);
+    color: var(--text-2); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    padding: 2px 6px; display: inline-block; margin-top: 4px;
+}
+
+/* --------------------------------------------------------------- tasks ---- */
+
+.task-list { display: grid; gap: 1px; background: var(--border); }
+
+.task { display: grid; gap: 7px; padding: 11px 14px; background: var(--surface-1); }
+.task:hover { background: var(--surface-2); }
+.task-top { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.task-title { font-size: var(--t-base); font-weight: 500; min-width: 0; }
+.task-meta {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    font: var(--t-xs)/1 var(--mono); color: var(--text-3);
+}
+.task-actions { display: flex; gap: 6px; }
+
+/* ---------------------------------------------------------- task trace ---- */
+
+/* The recovery seam. Rendered as one numbered sequence whose author changes
+   partway down — the visual claim being that nothing restarted. */
+.trace { display: grid; gap: 0; padding: 4px 0; }
+
+.trace-step {
+    display: grid; grid-template-columns: 30px 1fr; gap: 10px;
+    padding: 7px 14px; position: relative;
+}
+.trace-seq {
+    font: 500 var(--t-xs)/1.6 var(--mono); color: var(--text-3);
+    text-align: right;
+}
+.trace-body { min-width: 0; }
+.trace-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.trace-agent { font-size: var(--t-sm); font-weight: 600; }
+.trace-action {
+    font: 500 var(--t-xs)/1 var(--mono); text-transform: uppercase;
+    letter-spacing: 0.03em; color: var(--text-3);
+}
+.trace-reason { color: var(--text-2); font-size: var(--t-sm); margin-top: 2px; }
+
+/* The handover marker: drawn between two steps whose agents differ. */
+.trace-handover {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; margin: 4px 0;
+    background: color-mix(in srgb, var(--warn) 7%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--warn) 26%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--warn) 26%, transparent);
+    font-size: var(--t-xs); color: var(--warn);
+}
+.trace-handover strong { color: var(--text); font-weight: 600; }
+
+/* -------------------------------------------------------------- memory ---- */
+
+.memory-controls {
+    display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap;
     padding: 12px 14px;
-    transition: border-color 250ms ease;
 }
-.task[data-status="RUNNING"] { border-left-color: var(--run); }
-.task[data-status="ORPHANED"] { border-left-color: var(--warn); }
-.task[data-status="COMPLETED"] { border-left-color: var(--info); }
-.task[data-status="FAILED"] { border-left-color: var(--danger); }
-
-.task-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.task-title { font-weight: 600; font-size: 14.5px; min-width: 0; }
-.task-meta { font-family: var(--mono); font-size: 11.5px; color: var(--faint); margin-top: 6px; display: flex; flex-wrap: wrap; gap: 12px; }
-
-/* ------------------------------------------------------------ timeline --- */
-
-.timeline {
-    list-style: none; margin: 0; padding: 0 4px 0 0;
-    /* Fixed height so the panel does not grow without bound during a run and
-       push the memory explorer off-screen mid-demo. */
-    height: 560px;
-    overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: var(--line) transparent;
-}
-.timeline::-webkit-scrollbar { width: 8px; }
-.timeline::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
-
-.ev {
-    display: grid;
-    grid-template-columns: 62px 1fr;
-    gap: 10px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--line-soft);
-    font-size: 13px;
-    animation: slide-in 250ms ease;
-}
-@keyframes slide-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
-
-.ev time { font-family: var(--mono); font-size: 11px; color: var(--faint); padding-top: 2px; }
-.ev-type {
-    font-family: var(--mono); font-size: 11.5px; font-weight: 700;
-    letter-spacing: 0.04em; color: var(--muted);
-}
-.ev-detail { color: var(--faint); font-size: 12.5px; margin-top: 2px; word-break: break-word; }
-
-.ev[data-kind="fail"] .ev-type { color: var(--danger); }
-.ev[data-kind="warn"] .ev-type { color: var(--warn); }
-.ev[data-kind="good"] .ev-type { color: var(--run); }
-.ev[data-kind="mem"] .ev-type { color: var(--recall); }
-.ev[data-kind="info"] .ev-type { color: var(--info); }
-
-/* The five recovery events get a visible marker so they stand out in a fast
-   scrolling feed - they are the proof and must not read as routine chatter. */
-.ev[data-key="true"] {
-    background: linear-gradient(90deg, rgb(167 139 250 / 0.12), transparent 70%);
-    border-left: 2px solid var(--recall);
-    padding-left: 8px;
-    margin-left: -10px;
-}
-
-/* -------------------------------------------------------------- memory --- */
-
-.memory-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
-.memory-controls .field { margin-bottom: 0; }
-.memory-controls select { min-width: 190px; }
-.memory-controls .btn { min-height: 44px; }
+.memory-controls .field { flex: 1 1 130px; }
 
 .memory-meta {
-    font-family: var(--mono); font-size: 12px; color: var(--faint);
-    margin: 14px 0 10px;
-    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 0 14px 10px; font-size: var(--t-sm); color: var(--text-3);
 }
+.memory-meta b { color: var(--text); }
 
-.memory-list { display: grid; gap: 10px; }
+.memory-list { display: grid; gap: 1px; background: var(--border); max-height: 460px; overflow-y: auto; }
 
-.memory {
-    background: var(--bg);
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius-sm);
-    padding: 13px 15px;
-}
-.memory[data-scope="PRIVATE"] { border-left: 3px solid var(--recall); }
-.memory[data-scope="GOAL"] { border-left: 3px solid var(--info); }
+.memory { display: grid; gap: 7px; padding: 11px 14px; background: var(--surface-1); }
+.memory:hover { background: var(--surface-2); }
+.memory[data-scope="PRIVATE"] { border-left: 2px solid color-mix(in srgb, var(--recall) 50%, transparent); }
 
-.memory-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 7px; }
-.memory-content { font-size: 14.5px; line-height: 1.5; }
+.memory-top { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.memory-content { font-size: var(--t-base); line-height: 1.5; }
 .memory-foot {
-    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
-    font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 9px;
+    display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+    font: var(--t-xs)/1 var(--mono); color: var(--text-3);
 }
+.memory-foot a { color: var(--accent); }
+.memory-foot a:hover { text-decoration: underline; }
 
-.conf { display: inline-flex; align-items: center; gap: 7px; }
-.conf-bar { width: 54px; height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
-.conf-fill { height: 100%; background: var(--run); }
+.conf { display: inline-flex; align-items: center; gap: 6px; }
+.conf-bar {
+    width: 44px; height: 3px; border-radius: 2px;
+    background: var(--surface-3); overflow: hidden;
+}
+.conf-fill { display: block; height: 100%; background: var(--run); }
+/* Capped confidence is the schema pushing back on an unevidenced claim. It gets
+   the warning colour because that is information, not decoration. */
 .conf-fill[data-low="true"] { background: var(--warn); }
 
-.empty {
-    text-align: center; padding: 34px 20px;
-    color: var(--faint); font-size: 14px;
-    border: 1px dashed var(--line); border-radius: var(--radius-sm);
-}
-.empty strong { display: block; color: var(--muted); margin-bottom: 4px; }
+/* ---------------------------------------------------------- cockroachdb --- */
 
-/* -------------------------------------------------------------- toasts --- */
+.crdb-cluster {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    padding: 0 14px 12px;
+}
+.crdb-badge {
+    font: 600 var(--t-xs)/1 var(--mono);
+    color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+    padding: 4px 8px; border-radius: var(--r-sm);
+}
+.crdb-fact {
+    font: 500 var(--t-xs)/1 var(--mono); color: var(--run);
+    background: color-mix(in srgb, var(--run) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--run) 24%, transparent);
+    padding: 4px 8px; border-radius: var(--r-sm);
+}
+.crdb-idx {
+    font-size: var(--t-xs); color: var(--text-3);
+    background: var(--surface-2); border: 1px solid var(--border);
+    padding: 4px 8px; border-radius: var(--r-sm);
+    max-width: 100%; overflow-x: auto; white-space: nowrap;
+}
+
+.crdb { border-top: 1px solid var(--border); padding: 12px 14px; }
+.crdb-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin-bottom: 9px;
+}
+.crdb-head h3 {
+    font: 600 var(--t-xs)/1 var(--sans); letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--text-3);
+}
+
+.crdb-grants { display: grid; gap: 6px; }
+
+.crdb-grant {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-left: 2px solid var(--border-strong);
+    border-radius: var(--r); padding: 9px 11px;
+}
+/* The whole point of the panel. Green means the vector index served it; amber
+   means it did not, and that is reported just as plainly. */
+.crdb-grant[data-vector="true"]  { border-left-color: var(--run); }
+.crdb-grant[data-vector="false"] { border-left-color: var(--warn); }
+
+.crdb-grant-top { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-bottom: 7px; }
+.crdb-grant-top code { font-size: var(--t-xs); color: var(--accent); }
+.crdb-time { font: var(--t-xs)/1 var(--mono); color: var(--text-3); margin-left: auto; }
+
+.crdb-pred { display: block; font-size: var(--t-xs); line-height: 1.6; color: var(--text-2); word-break: break-word; }
+
+.crdb-spans { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; margin-top: 7px; }
+.crdb-spans span {
+    font: 600 10px/1 var(--sans); letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--text-3);
+}
+.crdb-spans code { font-size: var(--t-xs); color: var(--run); word-break: break-all; flex: 1; min-width: 0; }
+
+.crdb-grant-none { border-left-color: var(--recall); color: var(--text-2); font-size: var(--t-sm); }
+.crdb-grant-none strong { color: var(--text); }
+
+.crdb-note { font-size: var(--t-xs); line-height: 1.6; color: var(--text-3); margin-top: 9px; }
+
+.crdb-plan {
+    margin-top: 9px; padding: 10px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--r);
+    font-size: var(--t-xs); line-height: 1.5; color: var(--text-3);
+    overflow: auto; max-height: 300px; white-space: pre;
+}
+
+/* ------------------------------------------------------------ recovery ---- */
+
+/* Amber, bordered, and not dismissible. When this appears something has failed
+   and been detected, and it should not look like a notification. */
+.recovery {
+    background: color-mix(in srgb, var(--warn) 6%, var(--surface-1));
+    border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+    border-radius: var(--r-lg); padding: 16px 18px; margin-bottom: 12px;
+}
+.recovery-head { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
+.recovery-head h2 { font-size: var(--t-md); color: var(--warn); }
+
+.pulse-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none;
+    animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 45%, transparent); }
+    50% { opacity: 0.75; box-shadow: 0 0 0 5px transparent; }
+}
+
+.recovery-lede { color: var(--text-2); font-size: var(--t-sm); max-width: 82ch; margin-bottom: 14px; }
+
+.recovery-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.recovery-steps li {
+    display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: start;
+    font-size: var(--t-sm); color: var(--text-3);
+}
+.recovery-steps li[data-done="true"] { color: var(--text); }
+
+.step-num {
+    width: 20px; height: 20px; border-radius: 50%;
+    display: grid; place-items: center;
+    font: 600 10px/1 var(--mono);
+    border: 1px solid var(--border-strong); color: var(--text-3);
+    background: var(--surface-1);
+}
+.recovery-steps li[data-done="true"] .step-num {
+    background: var(--warn); border-color: var(--warn); color: #0A0B0D;
+}
+.step-body b { display: block; font-weight: 600; }
+.step-body span { color: var(--text-3); font-size: var(--t-xs); font-family: var(--mono); }
+
+/* --------------------------------------------------------------- misc ----- */
+
+.empty {
+    padding: 22px 16px; text-align: center;
+    color: var(--text-3); font-size: var(--t-sm); line-height: 1.6;
+    background: var(--surface-1);
+}
+.empty strong { display: block; color: var(--text-2); font-weight: 600; margin-bottom: 4px; }
 
 .toasts {
-    position: fixed; z-index: 50;
-    right: 16px; bottom: 16px;
-    display: flex; flex-direction: column; gap: 10px;
-    max-width: min(420px, calc(100vw - 32px));
+    position: fixed; right: 16px; bottom: 16px; z-index: 60;
+    display: grid; gap: 8px; max-width: min(400px, calc(100vw - 32px));
 }
 .toast {
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-left: 3px solid var(--info);
-    border-radius: var(--radius-sm);
-    padding: 12px 15px;
-    font-size: 14px;
-    box-shadow: var(--shadow);
-    animation: slide-in 200ms ease;
+    background: var(--surface-3); border: 1px solid var(--border-strong);
+    border-left: 2px solid var(--text-3);
+    border-radius: var(--r); padding: 11px 13px;
+    box-shadow: 0 8px 28px rgb(0 0 0 / 0.5);
+    animation: slide-in 180ms ease;
 }
+.toast { font-size: var(--t-base); font-weight: 500; }
+.toast small {
+    display: block; color: var(--text-3); font-size: var(--t-xs);
+    font-weight: 400; margin-top: 3px; line-height: 1.5;
+}
+.toast[data-kind="ok"]    { border-left-color: var(--run); }
+.toast[data-kind="kill"]  { border-left-color: var(--danger); }
 .toast[data-kind="error"] { border-left-color: var(--danger); }
-.toast[data-kind="ok"] { border-left-color: var(--run); }
-.toast[data-kind="kill"] { border-left-color: var(--warn); }
-.toast small { display: block; color: var(--faint); margin-top: 3px; font-size: 12.5px; }
+
+@keyframes slide-in { from { opacity: 0; transform: translateY(6px); } }
 
 .spinner {
-    display: inline-block; width: 14px; height: 14px;
-    border: 2px solid rgb(255 255 255 / 0.25);
-    border-top-color: currentColor;
-    border-radius: 50%;
+    display: inline-block; width: 11px; height: 11px;
+    border: 1.5px solid color-mix(in srgb, var(--text) 22%, transparent);
+    border-top-color: currentColor; border-radius: 50%;
     animation: spin 700ms linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ------------------------------------------------- cockroachdb panel ----- */
+/* ---------------------------------------------------------- responsive ---- */
 
-/* The cluster strip sits with the memory controls rather than in the page
-   chrome: it is a fact about how *this* retrieval is served, not branding. */
-.crdb-cluster {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    margin: -6px 0 14px;
+@media (max-width: 1400px) {
+    .workspace { grid-template-columns: 300px minmax(0, 1fr); }
+    .col-right { grid-column: 1 / -1; }
+    .activity { height: 480px; }
 }
 
-.crdb-badge {
-    font: 600 11px/1 var(--sans); letter-spacing: 0.02em;
-    color: var(--info); background: rgb(56 189 248 / 0.10);
-    border: 1px solid rgb(56 189 248 / 0.22);
-    padding: 5px 9px; border-radius: 999px; white-space: nowrap;
-}
-
-.crdb-fact {
-    font: 600 11px/1 var(--mono); color: var(--run);
-    background: rgb(34 197 94 / 0.09);
-    padding: 5px 9px; border-radius: 999px;
-}
-
-.crdb-idx {
-    font: 11px/1.5 var(--mono); color: var(--muted);
-    background: var(--surface); border: 1px solid var(--line-soft);
-    padding: 4px 8px; border-radius: var(--radius-sm);
-    overflow-x: auto; max-width: 100%;
-}
-
-.crdb {
-    margin-top: 16px; padding-top: 14px;
-    border-top: 1px solid var(--line-soft);
-}
-
-.crdb-head {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; margin-bottom: 10px;
-}
-
-.crdb-head h3 {
-    font: 600 12px/1 var(--sans); letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--faint); margin: 0;
-}
-
-.crdb-grants { display: grid; gap: 8px; }
-
-.crdb-grant {
-    background: var(--surface); border: 1px solid var(--line-soft);
-    border-left: 2px solid var(--line);
-    border-radius: var(--radius-sm); padding: 10px 12px;
-}
-
-/* The green edge is the whole point of the panel, so it is the one thing that
-   changes when the plan changes. A scan gets the amber edge, not a hidden row. */
-.crdb-grant[data-vector="true"] { border-left-color: var(--run); }
-.crdb-grant[data-vector="false"] { border-left-color: var(--warn); }
-
-.crdb-grant-top {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px;
-}
-
-.crdb-grant-top code {
-    font: 11px/1 var(--mono); color: var(--info);
-}
-
-.crdb-time { font: 11px/1 var(--mono); color: var(--faint); margin-left: auto; }
-
-.crdb-pred {
-    display: block; font: 11px/1.6 var(--mono); color: var(--text);
-    word-break: break-word;
-}
-
-.crdb-spans {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-top: 8px;
-}
-
-.crdb-spans span {
-    font: 600 10px/1 var(--sans); letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--faint);
-}
-
-.crdb-spans code {
-    font: 11px/1.5 var(--mono); color: var(--run);
-    word-break: break-all; flex: 1; min-width: 0;
-}
-
-.crdb-grant-none { border-left-color: var(--recall); color: var(--muted); font-size: 13px; }
-.crdb-grant-none strong { color: var(--text); }
-
-.crdb-note {
-    font-size: 12px; line-height: 1.6; color: var(--faint);
-    margin: 10px 0 0; max-width: 78ch;
-}
-
-/* Wide by nature - the raw plan is pre-formatted and must scroll inside its own
-   box rather than stretching the panel. */
-.crdb-plan {
-    margin: 10px 0 0; padding: 12px;
-    background: var(--bg); border: 1px solid var(--line-soft);
-    border-radius: var(--radius-sm);
-    font: 11px/1.55 var(--mono); color: var(--muted);
-    overflow-x: auto; max-height: 320px; overflow-y: auto;
-    white-space: pre;
-}
-
-/* -------------------------------------------------------- responsive ----- */
-
-@media (max-width: 1080px) {
+@media (max-width: 900px) {
     .workspace { grid-template-columns: minmax(0, 1fr); }
-    .panel-timeline { grid-row: auto; }
-    .timeline { height: 380px; }
+    .col-right { grid-column: auto; }
+    .activity { height: 400px; }
 }
 
 @media (max-width: 620px) {
-    .hero { padding: 28px 0 24px; }
+    .wrap { padding: 20px 14px 48px; }
+    .hero { padding: 36px 0 28px; }
+    .hero h1 { font-size: var(--t-xl); }
     .hero-actions .btn { width: 100%; }
-    .goal-head { gap: 16px; }
-    .stat { flex: 1 1 calc(50% - 5px); min-width: 0; }
-    .agent { flex-wrap: wrap; }
-    .agent-actions { width: 100%; }
-    .agent-actions .btn { flex: 1; }
+    .goal-head h1 { font-size: var(--t-lg); }
+    .stat { flex: 1 1 calc(50% - 4px); }
     .memory-controls .btn { width: 100%; }
     .crdb-time { margin-left: 0; }
+    .act { grid-template-columns: 46px 1fr; }
 }
 
 /* Honour a reduced-motion preference: the pulses and slide-ins are decoration,

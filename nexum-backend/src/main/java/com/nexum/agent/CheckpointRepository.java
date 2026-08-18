@@ -95,7 +95,48 @@ public class CheckpointRepository {
         return (count != null) ? count : 0;
     }
 
+    /**
+     * Every step taken on a task, in order, with the agent that took it.
+     *
+     * <p>The single most persuasive view in the product, because the authorship
+     * column is where the argument lands: on a recovered task the early rows
+     * carry one agent's name and the later rows another's, on one unbroken
+     * sequence. Nothing restarted, nothing was lost, and the work simply changed
+     * hands. Reading it any other way - per run, per agent - would hide exactly
+     * that.
+     *
+     * <p>Joined to agents rather than resolved in the browser: a trace of a task
+     * whose agents have all died must still name them, and the client has no
+     * reason to hold identities for agents that are no longer members.
+     */
+    public List<Step> traceFor(UUID taskId) {
+        return this.jdbc.query("""
+                SELECT c.seq, c.run_id, c.agent_id, a.name AS agent_name,
+                       c.progress_summary, c.pending_actions,
+                       c.current_context::TEXT AS current_context, c.created_at
+                FROM checkpoints c
+                JOIN agents a ON a.id = c.agent_id
+                WHERE c.task_id = ?
+                ORDER BY c.seq
+                """,
+                (rs, rowNum) -> new Step(
+                        rs.getInt("seq"),
+                        rs.getObject("run_id", UUID.class),
+                        rs.getObject("agent_id", UUID.class),
+                        rs.getString("agent_name"),
+                        rs.getString("progress_summary"),
+                        rs.getString("pending_actions"),
+                        rs.getString("current_context"),
+                        rs.getTimestamp("created_at").toInstant()),
+                taskId);
+    }
+
     public record Saved(UUID id, int seq) {
+    }
+
+    /** One checkpoint, as read for display rather than for resumption. */
+    public record Step(int seq, UUID runId, UUID agentId, String agentName,
+            String progressSummary, String action, String context, Instant createdAt) {
     }
 
     public record Checkpoint(UUID id, int seq, UUID runId, UUID agentId, String progressSummary,

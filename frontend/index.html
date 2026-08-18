@@ -6,7 +6,7 @@
 <title>Nexum — collective agent memory</title>
 <meta name="description" content="A distributed agent runtime where the goal, not the agent, is the persistent cognitive boundary.">
 <link rel="stylesheet" href="/app.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230B1220'/><circle cx='50' cy='30' r='10' fill='%2322C55E'/><circle cx='28' cy='70' r='8' fill='%2338BDF8'/><circle cx='72' cy='70' r='8' fill='%2338BDF8'/><path d='M50 40 L28 62 M50 40 L72 62' stroke='%23334155' stroke-width='4'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230A0B0D'/><circle cx='50' cy='30' r='10' fill='%233FB950'/><circle cx='28' cy='70' r='8' fill='%234F8DF7'/><circle cx='72' cy='70' r='8' fill='%234F8DF7'/><path d='M50 40 L28 62 M50 40 L72 62' stroke='%2334383F' stroke-width='4'/></svg>">
 </head>
 <body>
 
@@ -25,11 +25,8 @@
     <symbol id="i-brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 5.5a3 3 0 0 0-5.9-.7A3 3 0 0 0 4 10a3 3 0 0 0 1.2 5.4A3 3 0 0 0 12 18.5zM12 5.5a3 3 0 0 1 5.9-.7A3 3 0 0 1 20 10a3 3 0 0 1-1.2 5.4A3 3 0 0 1 12 18.5z"/>
     </symbol>
-    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
-    </symbol>
-    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M20 6 9 17l-5-5"/>
+    <symbol id="i-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 12h4l3-8 4 16 3-8h4"/>
     </symbol>
     <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M19 12H5M12 19l-7-7 7-7"/>
@@ -45,6 +42,9 @@
     </symbol>
     <symbol id="i-task" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/>
+    </symbol>
+    <symbol id="i-steps" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 20h4v-5h4v-5h4V5h4"/>
     </symbol>
     <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/>
@@ -66,6 +66,9 @@
     </span>
   </a>
   <div class="topbar-right">
+    <span id="research-mode" class="conn" data-state="idle" hidden>
+      <span id="research-label">corpus</span>
+    </span>
     <span id="conn" class="conn" data-state="idle">
       <span class="conn-dot" aria-hidden="true"></span>
       <span id="conn-label">idle</span>
@@ -84,8 +87,9 @@
       <h1>Agents are disposable.<br><span class="hero-accent">Goals persist.</span></h1>
       <p class="hero-sub">
         Nexum makes the <strong>goal</strong> — not the agent — the persistent cognitive
-        boundary. Agents join a mission, contribute to shared memory, can die, and get
-        replaced. The mission keeps everything the collective learned.
+        boundary. Agents join a mission, research it against the live web, contribute
+        to shared memory, can die, and get replaced. The mission keeps everything the
+        collective learned.
       </p>
       <div class="hero-actions">
         <button class="btn btn-primary btn-lg" data-act="seed">
@@ -145,73 +149,92 @@
     </div>
 
     <div class="workspace">
-      <section class="panel" aria-labelledby="h-agents">
-        <div class="panel-head">
-          <h2 id="h-agents"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg> Agents</h2>
-          <button class="btn btn-sm btn-ghost" data-act="add-agent">Add agent</button>
-        </div>
-        <div id="agent-list" class="agent-list"></div>
-      </section>
 
-      <section class="panel panel-timeline" aria-labelledby="h-timeline">
-        <div class="panel-head">
-          <h2 id="h-timeline"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> Live timeline</h2>
-          <label class="toggle">
-            <input type="checkbox" id="follow" checked>
-            <span>Follow</span>
-          </label>
-        </div>
-        <ol id="timeline" class="timeline"></ol>
-      </section>
-
-      <section class="panel" aria-labelledby="h-tasks">
-        <div class="panel-head">
-          <h2 id="h-tasks"><svg class="icon" aria-hidden="true"><use href="#i-task"/></svg> Tasks</h2>
-          <button class="btn btn-sm btn-ghost" data-act="add-task">Add task</button>
-        </div>
-        <div id="task-list" class="task-list"></div>
-      </section>
-
-      <section class="panel panel-memory" aria-labelledby="h-memory">
-        <div class="panel-head">
-          <h2 id="h-memory"><svg class="icon" aria-hidden="true"><use href="#i-brain"/></svg> Collective memory</h2>
-        </div>
-        <p class="panel-lede">
-          Every query runs through the same access policy the agents use. Change who is
-          asking and the answer changes — that is the isolation guarantee, not a claim
-          about it.
-        </p>
-        <div id="crdb-cluster" class="crdb-cluster"></div>
-        <form class="memory-controls" id="memory-form">
-          <div class="field">
-            <label for="as-agent">Viewing as</label>
-            <select id="as-agent"></select>
+      <!-- who is working -->
+      <div class="col">
+        <section class="panel" aria-labelledby="h-agents">
+          <div class="panel-head">
+            <h2 id="h-agents"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg> Agents</h2>
+            <button class="btn btn-sm btn-ghost" data-act="add-agent">Add</button>
           </div>
-          <div class="field field-grow">
-            <label for="mem-q">Query</label>
-            <input id="mem-q" placeholder="transaction pricing" autocomplete="off">
-          </div>
-          <button class="btn btn-primary" type="submit">
-            <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
-            Recall
-          </button>
-        </form>
-        <div id="memory-meta" class="memory-meta"></div>
-        <div id="memory-list" class="memory-list"></div>
-
-        <!-- Filled from EXPLAIN ANALYZE of the statement the app just ran, so a
-             viewer can check the vector-index claim instead of taking it. -->
-        <section id="crdb" class="crdb" hidden aria-labelledby="h-crdb">
-          <div class="crdb-head">
-            <h3 id="h-crdb">How CockroachDB served that</h3>
-            <button class="btn btn-sm btn-ghost" data-act="toggle-plan" aria-expanded="false">
-              Full plan
-            </button>
-          </div>
-          <div id="crdb-grants" class="crdb-grants"></div>
-          <pre id="crdb-plan" class="crdb-plan" hidden></pre>
+          <div id="agent-list" class="agent-list"></div>
         </section>
-      </section>
+
+        <section class="panel" aria-labelledby="h-tasks">
+          <div class="panel-head">
+            <h2 id="h-tasks"><svg class="icon" aria-hidden="true"><use href="#i-task"/></svg> Tasks</h2>
+            <button class="btn btn-sm btn-ghost" data-act="add-task">Add</button>
+          </div>
+          <div id="task-list" class="task-list"></div>
+        </section>
+      </div>
+
+      <!-- what is happening -->
+      <div class="col">
+        <section class="panel panel-activity" aria-labelledby="h-activity">
+          <div class="panel-head">
+            <h2 id="h-activity"><svg class="icon" aria-hidden="true"><use href="#i-pulse"/></svg> Activity</h2>
+            <label class="toggle">
+              <input type="checkbox" id="follow" checked>
+              <span>Follow</span>
+            </label>
+          </div>
+          <ol id="activity" class="activity"></ol>
+        </section>
+
+        <section class="panel" aria-labelledby="h-trace">
+          <div class="panel-head">
+            <h2 id="h-trace"><svg class="icon" aria-hidden="true"><use href="#i-steps"/></svg> Task trace</h2>
+            <span id="trace-task" class="eyebrow"></span>
+          </div>
+          <div id="trace" class="trace"></div>
+        </section>
+      </div>
+
+      <!-- what is known -->
+      <div class="col col-right">
+        <section class="panel panel-memory" aria-labelledby="h-memory">
+          <div class="panel-head">
+            <h2 id="h-memory"><svg class="icon" aria-hidden="true"><use href="#i-brain"/></svg> Collective memory</h2>
+          </div>
+          <p class="panel-lede">
+            Every query runs through the same access policy the agents use. Change who is
+            asking and the answer changes — that is the isolation guarantee, not a claim
+            about it.
+          </p>
+          <div id="crdb-cluster" class="crdb-cluster"></div>
+          <form class="memory-controls" id="memory-form">
+            <div class="field">
+              <label for="as-agent">Viewing as</label>
+              <select id="as-agent"></select>
+            </div>
+            <div class="field field-grow">
+              <label for="mem-q">Query</label>
+              <input id="mem-q" placeholder="transaction pricing" autocomplete="off">
+            </div>
+            <button class="btn btn-primary" type="submit">
+              <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+              Recall
+            </button>
+          </form>
+          <div id="memory-meta" class="memory-meta"></div>
+          <div id="memory-list" class="memory-list"></div>
+
+          <!-- Filled from EXPLAIN ANALYZE of the statement the app just ran, so a
+               viewer can check the vector-index claim instead of taking it. -->
+          <section id="crdb" class="crdb" hidden aria-labelledby="h-crdb">
+            <div class="crdb-head">
+              <h3 id="h-crdb">How CockroachDB served that</h3>
+              <button class="btn btn-sm btn-ghost" data-act="toggle-plan" aria-expanded="false">
+                Full plan
+              </button>
+            </div>
+            <div id="crdb-grants" class="crdb-grants"></div>
+            <pre id="crdb-plan" class="crdb-plan" hidden></pre>
+          </section>
+        </section>
+      </div>
+
     </div>
   </section>
 </template>
