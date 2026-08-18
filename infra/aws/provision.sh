@@ -6,9 +6,13 @@
 #
 #   AWS_PROFILE=nexum ./infra/aws/provision.sh
 #
-# What it does NOT do: create the CockroachDB Cloud cluster, request Bedrock
-# model access, or point DNS at the instance. Those are console actions and are
-# listed at the end.
+# What it does NOT do: create the CockroachDB Cloud cluster or point DNS at the
+# instance. Those are console actions and are listed at the end.
+#
+# Bedrock needs no console step. AWS retired the model access page - serverless
+# foundation models enable themselves on first invocation - so the only gate is
+# the IAM policy attached below. Verified by invoking Titan directly: 1024
+# dimensions, matching the VECTOR(1024) column.
 
 set -euo pipefail
 
@@ -218,11 +222,11 @@ Before releasing, three things must be true:
           Caddy cannot get a certificate until the A record resolves here.
           Check with:  dig +short YOUR_HOST
 
-  2. Bedrock  Amazon Titan Text Embeddings V2 enabled in $REGION.
-              Bedrock console -> Model access.
-
-  3. CockroachDB Cloud  A v25.4+ cluster, with the connection details in
+  2. CockroachDB Cloud  A v25.4+ cluster, with the connection details in
                         infra/aws/.env.prod (see .env.prod.example).
+
+     Bedrock needs nothing: the instance role above grants InvokeModel on
+     Titan, and serverless models self-enable on first call.
 
 Then:  ./infra/aws/release.sh
 EOF
