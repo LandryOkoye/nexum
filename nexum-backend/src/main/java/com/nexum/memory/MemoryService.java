@@ -1,6 +1,7 @@
 package com.nexum.memory;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.nexum.event.EventLog;
@@ -10,8 +11,6 @@ import com.nexum.support.Json;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 /**
@@ -46,15 +45,15 @@ public class MemoryService {
     private final MemoryWriter writer;
     private final EventLog events;
     private final CockroachRetry retry;
-    private final ObjectProvider<EmbeddingModel> embeddingModels;
+    private final QueryEmbedder embedder;
 
     public MemoryService(MemoryRepository memories, MemoryWriter writer, EventLog events,
-            CockroachRetry retry, ObjectProvider<EmbeddingModel> embeddingModels) {
+            CockroachRetry retry, QueryEmbedder embedder) {
         this.memories = memories;
         this.writer = writer;
         this.events = events;
         this.retry = retry;
-        this.embeddingModels = embeddingModels;
+        this.embedder = embedder;
     }
 
     /**
@@ -96,10 +95,11 @@ public class MemoryService {
      * accidentally.
      */
     public Recall recall(UUID agentId, UUID goalId, String query, int limit) {
-        float[] vector = embedQuery(query);
+        Optional<float[]> vector = this.embedder.embed(query);
 
-        if (vector != null) {
-            List<ScoredMemory> hits = this.memories.searchSemantic(agentId, goalId, vector, limit);
+        if (vector.isPresent()) {
+            List<ScoredMemory> hits =
+                    this.memories.searchSemantic(agentId, goalId, vector.get(), limit);
             if (!hits.isEmpty()) {
                 return record(agentId, goalId, new Recall(Recall.Strategy.SEMANTIC, hits));
             }
@@ -122,22 +122,6 @@ public class MemoryService {
     static double effectiveConfidence(NewMemory proposed) {
         double clamped = Math.clamp(proposed.confidence(), 0.0, 1.0);
         return proposed.evidence().isEmpty() ? Math.min(clamped, UNEVIDENCED_CEILING) : clamped;
-    }
-
-    private float[] embedQuery(String query) {
-        EmbeddingModel model = this.embeddingModels.getIfAvailable();
-        if (model == null) {
-            return null;
-        }
-        try {
-            return model.embed(query);
-        }
-        catch (RuntimeException ex) {
-            // Retrieval degrades to structured rather than failing. An agent
-            // that cannot reach Bedrock should still see its collective's work.
-            log.warn("Could not embed query; falling back to structured retrieval", ex);
-            return null;
-        }
     }
 
     private Recall record(UUID agentId, UUID goalId, Recall recall) {

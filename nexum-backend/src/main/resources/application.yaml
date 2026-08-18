@@ -140,3 +140,8 @@ spring:
       embedding:
         options:
           model: mxbai-embed-large
+          # Keeping the model resident is configured on the Ollama container as
+          # OLLAMA_KEEP_ALIVE, not here. Setting it through the client was tried
+          # and silently did nothing - `ollama ps` still showed the default
+          # five-minute expiry - and a setting that looks effective but is not is
+          # worse than no setting at all.

@@ -8,11 +8,10 @@ import java.util.regex.Pattern;
 
 import com.nexum.memory.MemoryAccessPolicy;
 import com.nexum.memory.MemoryRepository;
+import com.nexum.memory.QueryEmbedder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -70,13 +69,13 @@ public class CockroachInspector {
 
     private final JdbcTemplate jdbc;
     private final MemoryAccessPolicy policy;
-    private final ObjectProvider<EmbeddingModel> embeddingModels;
+    private final QueryEmbedder embedder;
 
     public CockroachInspector(JdbcTemplate jdbc, MemoryAccessPolicy policy,
-            ObjectProvider<EmbeddingModel> embeddingModels) {
+            QueryEmbedder embedder) {
         this.jdbc = jdbc;
         this.policy = policy;
-        this.embeddingModels = embeddingModels;
+        this.embedder = embedder;
     }
 
     /**
@@ -255,16 +254,10 @@ public class CockroachInspector {
      * recency-ordered rows and calling them semantic.
      */
     private Embedded embed(String query) {
-        EmbeddingModel model = this.embeddingModels.getIfAvailable();
-        if (model != null && query != null && !query.isBlank()) {
-            try {
-                return new Embedded(model.embed(query), "query embedding");
-            }
-            catch (RuntimeException ex) {
-                log.warn("Could not embed inspection query; using probe vector", ex);
-            }
-        }
-        return new Embedded(new float[1024], "probe vector (no embedding provider)");
+        return this.embedder.embed(query)
+                .map((vector) -> new Embedded(vector, "query embedding"))
+                .orElseGet(() -> new Embedded(new float[1024],
+                        "probe vector (no embedding available)"));
     }
 
     private record Embedded(float[] vector, String source) {

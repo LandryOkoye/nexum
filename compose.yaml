@@ -75,6 +75,12 @@ services:
     image: 'ollama/ollama:latest'
     ports:
       - '11434:11434'
+    environment:
+      # Never unload the embedding model. The default evicts it after five idle
+      # minutes, and reloading it on CPU costs about thirty seconds - which is
+      # paid by whoever clicks Recall first, making the memory layer look slow
+      # when the vector search itself runs in about sixteen milliseconds.
+      OLLAMA_KEEP_ALIVE: '-1'
     volumes:
       - ollama-data:/root/.ollama
 
