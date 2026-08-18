@@ -624,11 +624,4 @@ These are not style preferences; they protect the core product behavior.
 10. Treat LLM output as a proposal. Java services and CockroachDB own
     authoritative state.
 
-## Further Reading
 
-- [Nexum_Project_Master_Spec.md](Nexum_Project_Master_Spec.md) - original product
-  and architecture specification.
-- [Nexum_Spec_Review.md](Nexum_Spec_Review.md) - engineering review that shaped
-  the implementation plan.
-- [BUILD_PLAN.md](BUILD_PLAN.md) - submission-focused build plan and cut order.
-- [HANDOFF.md](HANDOFF.md) - implementation invariants and engineering handoff.
