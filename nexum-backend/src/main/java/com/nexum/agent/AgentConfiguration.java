@@ -1,18 +1,54 @@
 package com.nexum.agent;
 
+import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestClient;
 
 /**
- * The two pools agent execution needs.
+ * The two pools agent execution needs, and the tool it researches with.
  */
 @Configuration(proxyBeanMethods = false)
 class AgentConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(AgentConfiguration.class);
+
+    /**
+     * Live web research when a key is configured, the offline corpus when not.
+     *
+     * <p>Chosen by whether the credential exists rather than by a profile, so a
+     * deployment cannot end up asking for web search it has no key for and
+     * failing every search at runtime. A missing key is a supported
+     * configuration, not a broken one.
+     *
+     * <p>Logged loudly either way. The most expensive hour of this build was
+     * spent on agents that looked like they were working while every model call
+     * silently fell back, so which tool is live is stated at startup rather than
+     * inferred later from empty results.
+     */
+    @Bean
+    ResearchTool researchTool(RestClient.Builder builder, CompetitorCorpus corpus,
+            @Value("${nexum.research.tavily-api-key:}") String tavilyApiKey,
+            @Value("${nexum.research.timeout-seconds:20}") int timeoutSeconds) {
+
+        if (tavilyApiKey == null || tavilyApiKey.isBlank()) {
+            log.warn("No TAVILY_API_KEY configured - agents will research the offline corpus "
+                    + "of {} documents. Set it to enable live web research.", corpus.size());
+            return new CorpusResearchTool(corpus);
+        }
+
+        log.info("Live web research enabled (Tavily), {}s timeout", timeoutSeconds);
+        return new WebResearchTool(builder, tavilyApiKey, Duration.ofSeconds(timeoutSeconds));
+    }
 
     /**
      * Agent workers, one virtual thread each.

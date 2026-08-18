@@ -1,6 +1,7 @@
 package com.nexum.agent;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
@@ -50,14 +51,14 @@ public class AgentLoop {
     private static final Logger log = LoggerFactory.getLogger(AgentLoop.class);
 
     private static final int MEMORY_RECALL_LIMIT = 5;
-    private static final int CORPUS_RESULT_LIMIT = 3;
+    private static final int RESEARCH_RESULT_LIMIT = 4;
 
     private final TaskRepository tasks;
     private final AgentRunRepository runs;
     private final CheckpointRepository checkpoints;
     private final DecisionRepository decisions;
     private final MemoryService memories;
-    private final CompetitorCorpus corpus;
+    private final ResearchTool research;
     private final StepPlanner planner;
     private final EventLog events;
     private final CockroachRetry retry;
@@ -67,7 +68,7 @@ public class AgentLoop {
 
     public AgentLoop(TaskRepository tasks, AgentRunRepository runs,
             CheckpointRepository checkpoints, DecisionRepository decisions,
-            MemoryService memories, CompetitorCorpus corpus, StepPlanner planner,
+            MemoryService memories, ResearchTool research, StepPlanner planner,
             EventLog events, CockroachRetry retry, ScheduledExecutorService scheduler,
             @Value("${nexum.agent.lease-seconds:8}") int leaseSeconds,
             @Value("${nexum.agent.heartbeat-interval-ms:2000}") long heartbeatIntervalMillis) {
@@ -77,7 +78,7 @@ public class AgentLoop {
         this.checkpoints = checkpoints;
         this.decisions = decisions;
         this.memories = memories;
-        this.corpus = corpus;
+        this.research = research;
         this.planner = planner;
         this.events = events;
         this.retry = retry;
@@ -215,18 +216,27 @@ public class AgentLoop {
     }
 
     private String search(UUID goalId, UUID runId, StepPlanner.Proposal proposal) {
-        List<CompetitorCorpus.Document> found =
-                this.corpus.search(proposal.query(), CORPUS_RESULT_LIMIT);
+        List<ResearchTool.Source> found =
+                this.research.search(proposal.query(), RESEARCH_RESULT_LIMIT);
 
+        // The sources are carried on the event, not just the count, so the
+        // timeline can show what the agent actually read and a viewer can open
+        // the same page. A research step that reports only "4 results" is
+        // indistinguishable from one that invented them.
         this.events.append(goalId, EventType.TOOL_CALLED,
-                Json.object("tool", "search_corpus", "runId", runId, "query", proposal.query(),
-                        "resultCount", found.size()));
+                Json.object("tool", this.research.name(), "runId", runId,
+                        "query", proposal.query(), "resultCount", found.size(),
+                        "sources", found.stream()
+                                .map((source) -> Map.of("id", source.id(),
+                                        "title", source.title(),
+                                        "url", (source.url() != null) ? source.url() : ""))
+                                .toList()));
 
         if (found.isEmpty()) {
-            return "No documents matched \"" + proposal.query() + "\".";
+            return "No results for \"" + proposal.query() + "\".";
         }
-        return found.stream().map(CompetitorCorpus.Document::asContext)
-                .reduce((left, right) -> left + "\n" + right).orElse("");
+        return found.stream().map(ResearchTool.Source::asContext)
+                .reduce((left, right) -> left + "\n\n" + right).orElse("");
     }
 
     /**
@@ -245,14 +255,22 @@ public class AgentLoop {
             return;
         }
 
-        List<NewMemory.Evidence> evidence = this.corpus.byId(proposal.evidenceDocId())
-                .map((document) -> List.of(new NewMemory.Evidence("DOCUMENT", document.id(),
-                        document.body(), proposal.confidence())))
+        Optional<ResearchTool.Source> cited = this.research.byId(proposal.evidenceDocId());
+
+        List<NewMemory.Evidence> evidence = cited
+                .map((source) -> List.of(new NewMemory.Evidence("SOURCE", source.id(),
+                        source.body(), proposal.confidence())))
                 .orElse(List.of());
 
+        // The source recorded is the resolved URL where there is one, so a
+        // finding in memory stays checkable by a human long after the run that
+        // produced it is gone. An unresolvable citation records the agent as the
+        // only source, which is what it is.
+        String source = cited.map((found) -> (found.url() != null) ? found.url() : found.id())
+                .orElse("agent");
+
         this.memories.remember(new NewMemory(goalId, agentId, task.taskId(), MemoryScope.GOAL,
-                proposal.memoryType(), proposal.finding(),
-                (proposal.evidenceDocId() != null) ? "corpus:" + proposal.evidenceDocId() : "agent",
+                proposal.memoryType(), proposal.finding(), source,
                 proposal.confidence(), evidence));
     }
 

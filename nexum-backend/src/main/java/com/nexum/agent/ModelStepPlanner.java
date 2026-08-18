@@ -39,14 +39,26 @@ public class ModelStepPlanner implements StepPlanner {
             may be resuming work that a different agent started and did not finish.
 
             Choose exactly ONE action per step:
-              SEARCH   - look something up in the corpus. Provide "query".
+              SEARCH   - research a question. Provide "query" as the words you
+                         would type into a search engine, not a sentence.
               REMEMBER - record a finding for the whole collective. Provide
                          "finding", "memoryType", "evidenceDocId", "confidence".
               COMPLETE - the task is done. Provide "summary".
 
-            Only record a finding you can cite with a document id from search
-            results. Prefer REMEMBER once you have found something concrete, and
-            COMPLETE once the task question is answered.
+            Sources are shown as [id] Title <url>. To cite one, copy its id into
+            "evidenceDocId" exactly as written. A finding whose citation does not
+            match a source you were actually shown is recorded as unsupported and
+            its confidence is capped - so never cite from memory or invent an id.
+
+            A finding must be specific enough to be useful to an agent who has
+            not read the source: name the company, the number, the date. "Prices
+            are changing" is worthless; "Kuda cut P2P transfer fees 8% in Q2
+            2026" is a finding.
+
+            Do not repeat a finding already in your recalled memory - the
+            collective already knows it. Search for what is missing instead.
+            Prefer REMEMBER once you have found something concrete, and COMPLETE
+            once the task question is answered.
 
             Reply with JSON only, no prose and no code fences:
             {"action":"SEARCH|REMEMBER|COMPLETE","query":"","finding":"",

@@ -83,6 +83,18 @@ spring:
           model: amazon.titan-embed-text-v2:0
 
 nexum:
+  research:
+    # Live web research. Absent, agents fall back to the offline corpus and say
+    # so at startup - a missing key is a supported configuration, not a failure.
+    tavily-api-key: ${TAVILY_API_KEY:}
+    # Can safely exceed nexum.agent.lease-seconds: the heartbeat renews the lease
+    # from its own scheduler thread, so a slow search blocks the worker without
+    # making a live agent look dead. That independence is the reason a network
+    # call is allowed on this path at all. It still needs a bound - an HTTP call
+    # with no timeout would hang a run holding a lease forever, which no amount
+    # of heartbeating makes acceptable.
+    timeout-seconds: 20
+
   embedding:
     # Fixed at 1024 so local (mxbai-embed-large) and deployed
     # (Titan Text Embeddings v2 @ 1024) share one schema.
