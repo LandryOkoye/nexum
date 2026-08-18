@@ -85,8 +85,14 @@ scp -i "$KEY_PATH" -o StrictHostKeyChecking=accept-new -q \
     "$TARBALL" "ubuntu@$HOST_IP:/tmp/nexum-image.tar.gz"
 ok "image uploaded"
 
+# The Caddyfile must land at the path compose.prod.yaml mounts - infra/aws/ -
+# rather than flat. Docker does not fail helpfully on a missing bind source: it
+# silently creates a *directory* at that path and then refuses to mount it over
+# a file, which reads as a permissions problem and is not one.
+ssh_ "mkdir -p /opt/nexum/infra/aws && rm -rf /opt/nexum/infra/aws/Caddyfile"
+scp -i "$KEY_PATH" -q "$HERE/Caddyfile" "ubuntu@$HOST_IP:/opt/nexum/infra/aws/Caddyfile"
 scp -i "$KEY_PATH" -q \
-    "$ROOT/compose.prod.yaml" "$HERE/Caddyfile" "$HERE/.env.prod" \
+    "$ROOT/compose.prod.yaml" "$HERE/.env.prod" \
     "ubuntu@$HOST_IP:/opt/nexum/"
 ssh_ "mv /opt/nexum/.env.prod /opt/nexum/.env && chmod 600 /opt/nexum/.env"
 ok "config uploaded"

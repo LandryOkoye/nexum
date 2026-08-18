@@ -25,6 +25,11 @@
 
 services:
   app:
+    # Named explicitly. Without this, a service carrying a build block is
+    # implicitly tagged <project>-<service> - nexum-app:latest - which is not
+    # what release.sh loads onto the instance, so `up --no-build` fails with
+    # "No such image" while the correct image sits right there on the box.
+    image: nexum-backend:latest
     build:
       context: .
       dockerfile: nexum-backend/Dockerfile
@@ -36,6 +41,11 @@ services:
       NEXUM_DB_PASSWORD: ${NEXUM_DB_PASSWORD}
       GROQ_API_KEY: ${GROQ_API_KEY}
       NEXUM_GROQ_MODEL: ${NEXUM_GROQ_MODEL:-openai/gpt-oss-120b}
+      # Without this the app starts perfectly well and quietly researches the
+      # offline corpus instead of the live web, announcing it only in a WARN at
+      # startup. The environment block here is an allowlist, so a key present in
+      # .env but absent from this list simply never reaches the container.
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       AWS_REGION: ${AWS_REGION:-us-east-1}
       NEXUM_S3_BUCKET: ${NEXUM_S3_BUCKET:-}
     # Bounded so the JVM and Caddy cannot between them exhaust a t3.small and

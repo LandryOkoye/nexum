@@ -40,3 +40,6 @@ CLAUDE.md
 infra/aws/.env.prod
 infra/aws/.public-ip
 infra/aws/.instance-id
+
+# Session handoff notes (internal, not part of the submission)
+SESSION_HANDOFF.md
