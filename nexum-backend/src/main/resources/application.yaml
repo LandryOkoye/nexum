@@ -46,11 +46,10 @@ spring:
     # (openai/groq, ollama, bedrock) so Spring AI must be told which to wire.
     model:
       chat: openai
-      # Bedrock is the DEFAULT, not a profile opt-in. Local dev and the deployed
-      # app then use the same embedding provider, so vectors are identical
-      # everywhere - the same reasoning as using real CockroachDB over Postgres.
-      # Ollama is an offline fallback behind the 'ollama' profile.
-      embedding: bedrock-titan
+      # Spring AI's Bedrock Titan auto-configuration serialises the wrong body
+      # for Titan Text Embeddings v2. Keep it disabled and wire the verified
+      # Titan v2 client through nexum.embedding.provider instead.
+      embedding: none
 
     # Groq exposes an OpenAI-compatible API, so the OpenAI starter is pointed
     # at it via base-url. Groq does NOT serve embeddings - hence the separate
@@ -96,6 +95,7 @@ nexum:
     timeout-seconds: 20
 
   embedding:
+    provider: titan
     # Fixed at 1024 so local (mxbai-embed-large) and deployed
     # (Titan Text Embeddings v2 @ 1024) share one schema.
     # Changing this means re-embedding everything and rebuilding the index.
@@ -145,3 +145,6 @@ spring:
           # and silently did nothing - `ollama ps` still showed the default
           # five-minute expiry - and a setting that looks effective but is not is
           # worse than no setting at all.
+nexum:
+  embedding:
+    provider:

@@ -35,6 +35,7 @@ HANDOFF.md
 BUILD_PLAN.md
 CLAUDE.md
 .claude/
+DEMO_SCRIPT.md
 
 # Deploy-time secrets and provisioning state
 infra/aws/.env.prod
