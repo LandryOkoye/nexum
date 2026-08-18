@@ -67,9 +67,11 @@ class DemoController {
             new SeedAgent("Dara", "ANALYST", false));
 
     private final GoalService goals;
+    private final DemoBacklog backlog;
 
-    DemoController(GoalService goals) {
+    DemoController(GoalService goals, DemoBacklog backlog) {
         this.goals = goals;
+        this.backlog = backlog;
     }
 
     @PostMapping("/seed")
@@ -78,6 +80,7 @@ class DemoController {
         UUID goalId = this.goals.createGoal(GOAL_TITLE, GOAL_DESCRIPTION);
 
         List<Map<String, Object>> agents = new ArrayList<>();
+        List<UUID> members = new ArrayList<>();
         for (SeedAgent seed : AGENTS) {
             // Names are suffixed so seeding twice does not produce two agents a
             // demo operator cannot tell apart on screen.
@@ -85,6 +88,7 @@ class DemoController {
                     seed.name() + "-" + shortId(goalId), seed.role());
             if (seed.joins()) {
                 this.goals.join(goalId, agentId, seed.role());
+                members.add(agentId);
             }
             agents.add(new LinkedHashMap<>(Map.of(
                     "agentId", agentId,
@@ -92,6 +96,10 @@ class DemoController {
                     "role", seed.role(),
                     "member", seed.joins())));
         }
+
+        // Written after the agents join, because the backlog is attributed to
+        // them - it is the mission's own history, not anonymous fixture data.
+        int seededMemories = this.backlog.seed(goalId, members);
 
         List<Map<String, Object>> tasks = new ArrayList<>();
         for (SeedTask seed : TASKS) {
@@ -105,6 +113,10 @@ class DemoController {
         response.put("goalId", goalId);
         response.put("agents", agents);
         response.put("tasks", tasks);
+        // Reported so an operator knows the vectors are still arriving: the
+        // embedding worker sweeps these in batches, and semantic retrieval only
+        // becomes the chosen plan once enough of them are READY.
+        response.put("seededMemories", seededMemories);
         response.put("next", List.of(
                 "POST /api/goals/" + goalId + "/agents/{agentId}/runs   (start an agent)",
                 "GET  /api/goals/" + goalId + "/memory?asAgent={agentId}",

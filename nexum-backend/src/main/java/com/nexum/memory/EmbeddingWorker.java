@@ -65,8 +65,21 @@ public class EmbeddingWorker {
 
         try {
             List<MemoryRepository.Pending> batch = this.memories.findPending(this.batchSize);
-            for (MemoryRepository.Pending pending : batch) {
-                embedOne(model, pending);
+            if (batch.isEmpty()) {
+                return;
+            }
+            if (!embedAsBatch(model, batch)) {
+                for (MemoryRepository.Pending pending : batch) {
+                    embedOne(model, pending);
+                }
+            }
+
+            // The backlog just drained. Refresh statistics once here rather than
+            // after every sweep: this is the moment the vector index finished
+            // gaining rows, and it is the last moment before someone queries it.
+            if (this.memories.findPending(1).isEmpty()) {
+                this.memories.refreshStatistics();
+                log.debug("Embedding backlog drained; refreshed statistics on memories");
             }
         }
         catch (RuntimeException ex) {
@@ -74,6 +87,65 @@ public class EmbeddingWorker {
             // future embedding silently.
             log.error("Embedding sweep failed; will retry next interval", ex);
         }
+    }
+
+    /**
+     * Embeds the whole batch in one provider call, returning false if that call
+     * could not be used.
+     *
+     * <p>One request instead of {@code batchSize} of them, because the per-call
+     * overhead dominates: measured against a local Ollama, embedding seventy
+     * memories one at a time took over three minutes, which is longer than the
+     * entire demo it is meant to support. The same work batched is a handful of
+     * seconds.
+     *
+     * <p>Returning false rather than throwing keeps the guarantee the per-memory
+     * path was written for. A batch call fails as a unit, so a single unembeddable
+     * row would take nineteen healthy ones down with it and they would all be
+     * retried together forever. When the batch fails for any reason the caller
+     * falls back to embedding one at a time, where a bad row can be identified
+     * and marked - so the fast path is an optimisation over the correct path, not
+     * a replacement for it.
+     */
+    private boolean embedAsBatch(EmbeddingModel model, List<MemoryRepository.Pending> batch) {
+        List<float[]> vectors;
+        try {
+            vectors = model.embed(batch.stream().map(MemoryRepository.Pending::content).toList());
+        }
+        catch (RuntimeException ex) {
+            log.warn("Batch embedding of {} memories failed; falling back to one at a time",
+                    batch.size(), ex);
+            return false;
+        }
+
+        // A provider that returns a different number of vectors than it was given
+        // has broken the positional contract this method relies on to match each
+        // vector to its memory. Attaching them anyway would give memories other
+        // memories' meanings - silent, permanent, and undetectable from the
+        // outside. Fall back rather than guess.
+        if (vectors == null || vectors.size() != batch.size()) {
+            log.warn("Batch embedding returned {} vectors for {} memories; falling back",
+                    (vectors != null) ? vectors.size() : null, batch.size());
+            return false;
+        }
+
+        for (int i = 0; i < batch.size(); i++) {
+            attach(batch.get(i), vectors.get(i));
+        }
+        return true;
+    }
+
+    /** Stores one vector, or marks the memory unembeddable if it is the wrong width. */
+    private void attach(MemoryRepository.Pending pending, float[] vector) {
+        if (vector == null || vector.length != this.expectedDimensions) {
+            log.error("Embedding provider returned {} dimensions but the schema declares "
+                    + "VECTOR({}). Memory {} cannot be embedded - the provider and the "
+                    + "schema must agree.", (vector != null) ? vector.length : null,
+                    this.expectedDimensions, pending.id());
+            this.memories.markEmbeddingFailed(pending.id());
+            return;
+        }
+        this.memories.attachEmbedding(pending.id(), vector);
     }
 
     /**
@@ -91,18 +163,7 @@ public class EmbeddingWorker {
      */
     private void embedOne(EmbeddingModel model, MemoryRepository.Pending pending) {
         try {
-            float[] vector = model.embed(pending.content());
-
-            if (vector.length != this.expectedDimensions) {
-                log.error("Embedding provider returned {} dimensions but the schema declares "
-                        + "VECTOR({}). Memory {} cannot be embedded - the provider and the "
-                        + "schema must agree.", vector.length, this.expectedDimensions,
-                        pending.id());
-                this.memories.markEmbeddingFailed(pending.id());
-                return;
-            }
-
-            this.memories.attachEmbedding(pending.id(), vector);
+            attach(pending, model.embed(pending.content()));
         }
         catch (RuntimeException ex) {
             log.warn("Could not embed memory {}; leaving it PENDING for the next sweep",

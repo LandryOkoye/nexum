@@ -95,6 +95,17 @@ public class CompetitorCorpus {
         return DOCUMENTS.size();
     }
 
+    /**
+     * Every document, for callers that are not searching.
+     *
+     * <p>Immutable, and used to derive the demo's seeded memory backlog - not a
+     * retrieval path. An agent reaching for this instead of {@link #search}
+     * would be reading the whole corpus rather than looking anything up.
+     */
+    public List<Document> all() {
+        return DOCUMENTS;
+    }
+
     private static List<String> terms(String query) {
         if (query == null || query.isBlank()) {
             return List.of();

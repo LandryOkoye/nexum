@@ -209,6 +209,26 @@ public class MemoryRepository {
     }
 
     /**
+     * Tells the optimiser that the vector index has been populated.
+     *
+     * <p>Necessary because a vector index only contains rows whose embedding is
+     * non-null, and embeddings arrive long after the rows do. Between the write
+     * and the sweep that embeds it, the statistics describe a table whose vectors
+     * are all null - and against those statistics the optimiser correctly refuses
+     * to use the vector index, because on the table it believes in there is
+     * nothing there to search. It keeps refusing until automatic statistics
+     * happen to catch up, which on a freshly seeded goal is long after anyone has
+     * stopped watching.
+     *
+     * <p>So the component that fills the index is the one that announces it. This
+     * is a hint to the planner, not a correctness requirement: retrieval returns
+     * the same rows either way, just read a slower way.
+     */
+    public void refreshStatistics() {
+        this.jdbc.execute("ANALYZE memories");
+    }
+
+    /**
      * Marks a memory as unembeddable. The row keeps its content and stays
      * readable through the structured path - a failed vector must never look
      * like a lost memory.
