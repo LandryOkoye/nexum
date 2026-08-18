@@ -112,13 +112,7 @@ public class MemoryRepository {
             args.addAll(grant.parameters());
             args.add(limit);
 
-            List<ScoredMemory> hits = this.jdbc.query("""
-                    SELECT %s, m.embedding <=> ?::VECTOR AS distance
-                    FROM memories m
-                    WHERE %s
-                    ORDER BY distance
-                    LIMIT ?
-                    """.formatted(COLUMNS, grant.sql()),
+            List<ScoredMemory> hits = this.jdbc.query(semanticSql(grant.sql()),
                     (rs, rowNum) -> new ScoredMemory(MAPPER.mapRow(rs, rowNum),
                             rs.getDouble("distance")),
                     args.toArray());
@@ -229,8 +223,31 @@ public class MemoryRepository {
 
     // --- plumbing --------------------------------------------------------
 
+    /**
+     * The semantic retrieval statement, for one grant.
+     *
+     * <p>Exposed so the inspection plane can run {@code EXPLAIN} over the
+     * <em>same string this repository executes</em>. A dashboard that showed the
+     * plan of a query the application does not actually run would be a decoration
+     * rather than evidence - and worse, it would keep looking right after the
+     * real query drifted away from it. There is one statement, and it is this
+     * one.
+     *
+     * <p>Parameter order is fixed by the caller and is part of the contract: the
+     * query vector, then the grant's own parameters, then the limit.
+     */
+    public static String semanticSql(String grantSql) {
+        return """
+                SELECT %s, m.embedding <=> ?::VECTOR AS distance
+                FROM memories m
+                WHERE %s
+                ORDER BY distance
+                LIMIT ?
+                """.formatted(COLUMNS, grantSql);
+    }
+
     /** CockroachDB accepts a vector as a text literal cast to {@code VECTOR}. */
-    static String toLiteral(float[] vector) {
+    public static String toLiteral(float[] vector) {
         StringJoiner joiner = new StringJoiner(",", "[", "]");
         for (float value : vector) {
             joiner.add(Float.toString(value));

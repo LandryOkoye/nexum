@@ -576,6 +576,111 @@ select { cursor: pointer; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ------------------------------------------------- cockroachdb panel ----- */
+
+/* The cluster strip sits with the memory controls rather than in the page
+   chrome: it is a fact about how *this* retrieval is served, not branding. */
+.crdb-cluster {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    margin: -6px 0 14px;
+}
+
+.crdb-badge {
+    font: 600 11px/1 var(--sans); letter-spacing: 0.02em;
+    color: var(--info); background: rgb(56 189 248 / 0.10);
+    border: 1px solid rgb(56 189 248 / 0.22);
+    padding: 5px 9px; border-radius: 999px; white-space: nowrap;
+}
+
+.crdb-fact {
+    font: 600 11px/1 var(--mono); color: var(--run);
+    background: rgb(34 197 94 / 0.09);
+    padding: 5px 9px; border-radius: 999px;
+}
+
+.crdb-idx {
+    font: 11px/1.5 var(--mono); color: var(--muted);
+    background: var(--surface); border: 1px solid var(--line-soft);
+    padding: 4px 8px; border-radius: var(--radius-sm);
+    overflow-x: auto; max-width: 100%;
+}
+
+.crdb {
+    margin-top: 16px; padding-top: 14px;
+    border-top: 1px solid var(--line-soft);
+}
+
+.crdb-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 10px;
+}
+
+.crdb-head h3 {
+    font: 600 12px/1 var(--sans); letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--faint); margin: 0;
+}
+
+.crdb-grants { display: grid; gap: 8px; }
+
+.crdb-grant {
+    background: var(--surface); border: 1px solid var(--line-soft);
+    border-left: 2px solid var(--line);
+    border-radius: var(--radius-sm); padding: 10px 12px;
+}
+
+/* The green edge is the whole point of the panel, so it is the one thing that
+   changes when the plan changes. A scan gets the amber edge, not a hidden row. */
+.crdb-grant[data-vector="true"] { border-left-color: var(--run); }
+.crdb-grant[data-vector="false"] { border-left-color: var(--warn); }
+
+.crdb-grant-top {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+
+.crdb-grant-top code {
+    font: 11px/1 var(--mono); color: var(--info);
+}
+
+.crdb-time { font: 11px/1 var(--mono); color: var(--faint); margin-left: auto; }
+
+.crdb-pred {
+    display: block; font: 11px/1.6 var(--mono); color: var(--text);
+    word-break: break-word;
+}
+
+.crdb-spans {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-top: 8px;
+}
+
+.crdb-spans span {
+    font: 600 10px/1 var(--sans); letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--faint);
+}
+
+.crdb-spans code {
+    font: 11px/1.5 var(--mono); color: var(--run);
+    word-break: break-all; flex: 1; min-width: 0;
+}
+
+.crdb-grant-none { border-left-color: var(--recall); color: var(--muted); font-size: 13px; }
+.crdb-grant-none strong { color: var(--text); }
+
+.crdb-note {
+    font-size: 12px; line-height: 1.6; color: var(--faint);
+    margin: 10px 0 0; max-width: 78ch;
+}
+
+/* Wide by nature - the raw plan is pre-formatted and must scroll inside its own
+   box rather than stretching the panel. */
+.crdb-plan {
+    margin: 10px 0 0; padding: 12px;
+    background: var(--bg); border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    font: 11px/1.55 var(--mono); color: var(--muted);
+    overflow-x: auto; max-height: 320px; overflow-y: auto;
+    white-space: pre;
+}
+
 /* -------------------------------------------------------- responsive ----- */
 
 @media (max-width: 1080px) {
@@ -593,6 +698,7 @@ select { cursor: pointer; }
     .agent-actions { width: 100%; }
     .agent-actions .btn { flex: 1; }
     .memory-controls .btn { width: 100%; }
+    .crdb-time { margin-left: 0; }
 }
 
 /* Honour a reduced-motion preference: the pulses and slide-ins are decoration,

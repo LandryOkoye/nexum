@@ -224,6 +224,7 @@ async function renderGoal() {
     });
 
     await refresh();
+    paintCluster();
     openStream();
 
     // The stream carries events; this refreshes the derived state those events
@@ -403,6 +404,10 @@ async function onGoalClick(event) {
                 'Its lease will lapse and the reaper has to notice on its own.');
             await refresh();
         });
+    } else if (action === 'toggle-plan') {
+        const plan = $('#crdb-plan');
+        plan.hidden = !plan.hidden;
+        trigger.setAttribute('aria-expanded', String(!plan.hidden));
     } else if (action === 'add-agent') {
         const name = prompt('Agent name', 'Ekon');
         if (!name) { return; }
@@ -465,6 +470,10 @@ async function recall() {
             list.innerHTML = `<div class="empty"><strong>Nothing visible</strong>
                 ${escapeHtml(name)} cannot see any memory on this goal — either nothing has
                 been written yet, or this agent is not an active member.</div>`;
+            // Still worth explaining: an empty result because the policy issued no
+            // grants is a different thing from an empty result because the goal has
+            // no memories, and the plan is what tells them apart.
+            showPlan(agentId, query);
             return;
         }
 
@@ -496,10 +505,88 @@ async function recall() {
                   </div>
                 </article>`;
         }).join('');
+
+        showPlan(agentId, query);
     } catch (error) {
         meta.textContent = '';
         list.innerHTML = `<div class="empty"><strong>Recall failed</strong>
             ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+// --- cockroachdb inspection -----------------------------------------------
+
+// Names what we are connected to. The wire protocol is PostgreSQL's, so without
+// this nothing on screen distinguishes CockroachDB from Postgres - and the
+// vector indexes listed here could not exist on Postgres at all.
+async function paintCluster() {
+    const box = $('#crdb-cluster');
+    if (!box) { return; }
+    try {
+        const cluster = await api('/api/cockroach');
+        // "CockroachDB CCL v25.4.14 (x86_64-...)" - the release is the part worth
+        // showing; the build triple is noise on a dashboard.
+        const release = (cluster.version.match(/CockroachDB \S+ (v\S+)/) || [])[1]
+            || cluster.version;
+        const index = cluster.vectorIndexes.find((i) => i.name.includes('scope'))
+            || cluster.vectorIndexes[0];
+        box.innerHTML = `
+            <span class="crdb-badge" title="${escapeHtml(cluster.version)}">CockroachDB ${escapeHtml(release)}</span>
+            <span class="crdb-fact">${escapeHtml(cluster.isolation)}</span>
+            ${index ? `<code class="crdb-idx">${escapeHtml(index.definition.replace(/^VECTOR INDEX \S+ /, ''))}</code>` : ''}`;
+    } catch {
+        box.innerHTML = '';
+    }
+}
+
+// Shows how the query that just ran was executed. Rendered after the results
+// rather than instead of them: the results are the answer, this is the evidence
+// for how it was reached. A plan that says `scan` is shown exactly as
+// prominently as one that says `vector search` - a panel that only appears when
+// the news is good would be decoration.
+async function showPlan(agentId, query) {
+    const box = $('#crdb');
+    const grants = $('#crdb-grants');
+    const full = $('#crdb-plan');
+    if (!box) { return; }
+
+    try {
+        const plan = await api(`/api/cockroach/goals/${state.goalId}/recall-plan`
+            + `?asAgent=${agentId}&query=${encodeURIComponent(query)}&limit=25`);
+
+        box.hidden = false;
+
+        if (!plan.plans.length) {
+            grants.innerHTML = `<div class="crdb-grant crdb-grant-none">
+                <strong>No query ran.</strong> The access policy returned no grants for this
+                agent, so retrieval stopped before it reached the memories table. Denial
+                happens above the database, not by filtering rows out of a result.</div>`;
+            full.textContent = '';
+            return;
+        }
+
+        grants.innerHTML = plan.plans.map((p) => `
+            <div class="crdb-grant" data-vector="${p.vectorSearch}">
+              <div class="crdb-grant-top">
+                <span class="pill ${p.vectorSearch ? 'pill-done' : 'pill-orphan'}">${p.vectorSearch ? 'vector search' : 'scan'}</span>
+                ${p.index ? `<code>${escapeHtml(p.index.replace(/^memories@/, ''))}</code>` : ''}
+                ${p.executionTime ? `<span class="crdb-time">${escapeHtml(p.executionTime)}</span>` : ''}
+              </div>
+              <code class="crdb-pred">${escapeHtml(p.predicate)}</code>
+              ${p.prefixSpans ? `<div class="crdb-spans"><span>index prefix</span><code>${escapeHtml(p.prefixSpans)}</code></div>` : ''}
+            </div>`).join('')
+            + `<p class="crdb-note">Scope is constrained in the index prefix — the engine
+                never ranks a memory this agent may not see. Vector built from
+                ${escapeHtml(plan.vectorSource)}, ${plan.dimensions} dimensions.</p>`;
+
+        full.textContent = plan.plans
+            .map((p) => `-- ${p.predicate}\n${p.lines.join('\n')}`)
+            .join('\n\n');
+    } catch (error) {
+        box.hidden = false;
+        grants.innerHTML = `<div class="crdb-grant crdb-grant-none">
+            Could not read the plan — ${escapeHtml(error.message)}</div>`;
+        full.textContent = '';
     }
 }
 

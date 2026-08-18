@@ -181,6 +181,7 @@
           asking and the answer changes — that is the isolation guarantee, not a claim
           about it.
         </p>
+        <div id="crdb-cluster" class="crdb-cluster"></div>
         <form class="memory-controls" id="memory-form">
           <div class="field">
             <label for="as-agent">Viewing as</label>
@@ -197,6 +198,19 @@
         </form>
         <div id="memory-meta" class="memory-meta"></div>
         <div id="memory-list" class="memory-list"></div>
+
+        <!-- Filled from EXPLAIN ANALYZE of the statement the app just ran, so a
+             viewer can check the vector-index claim instead of taking it. -->
+        <section id="crdb" class="crdb" hidden aria-labelledby="h-crdb">
+          <div class="crdb-head">
+            <h3 id="h-crdb">How CockroachDB served that</h3>
+            <button class="btn btn-sm btn-ghost" data-act="toggle-plan" aria-expanded="false">
+              Full plan
+            </button>
+          </div>
+          <div id="crdb-grants" class="crdb-grants"></div>
+          <pre id="crdb-plan" class="crdb-plan" hidden></pre>
+        </section>
       </section>
     </div>
   </section>
