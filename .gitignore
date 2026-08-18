@@ -35,3 +35,8 @@ HANDOFF.md
 BUILD_PLAN.md
 CLAUDE.md
 .claude/
+
+# Deploy-time secrets and provisioning state
+infra/aws/.env.prod
+infra/aws/.public-ip
+infra/aws/.instance-id
